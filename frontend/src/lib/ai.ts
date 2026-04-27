@@ -128,20 +128,22 @@ function normalizeEnhancePayload(
   };
 }
 
-export async function enhanceTask(title: string, description: string): Promise<TaskEnhancementResult> {
-  const content = await ollamaChat(
-    [
-      {
-        role: 'system',
-        content:
-          'You are a high-performance task optimizer. Reply with one JSON object only. No markdown code fences, no text before or after the JSON.',
-      },
-      {
-        role: 'user',
-        content: `Enhance this task for maximum clarity and actionability.
+function buildEnhanceUserPrompt(title: string, description: string, tags: string[]): string {
+  const details = description.trim();
+  const detailsBlock = details
+    ? `Task details (primary context — base your refinement on this text; keep facts and constraints accurate, improve clarity, structure, and actionability; do not invent requirements that contradict it):\n---\n${details}\n---`
+    : `Task details: (none yet — infer a reasonable scope, risks, and definition of done from the title only.)`;
 
-Task Title: ${title}
-Task Description: ${description}
+  const tagLine =
+    tags.length > 0
+      ? `\nExisting tags (respect or refine wording; you may suggest better labels in aiThinking if useful): ${tags.join(', ')}`
+      : '';
+
+  return `Enhance this task for maximum clarity and actionability.
+
+Title: ${title}
+
+${detailsBlock}${tagLine}
 
 Return exactly one JSON object with these keys (use strings and arrays of strings; suggestedPriority must be exactly "low", "medium", or "high"):
 {
@@ -152,7 +154,24 @@ Return exactly one JSON object with these keys (use strings and arrays of string
   "suggestedPriority": "low" | "medium" | "high",
   "definitionOfDone": "string",
   "aiThinking": "string"
-}`,
+}`;
+}
+
+export async function enhanceTask(
+  title: string,
+  description: string,
+  tags: string[] = [],
+): Promise<TaskEnhancementResult> {
+  const content = await ollamaChat(
+    [
+      {
+        role: 'system',
+        content:
+          'You are a high-performance task optimizer. When task details are provided, treat them as authoritative context for scope and facts. Reply with one JSON object only. No markdown code fences, no text before or after the JSON.',
+      },
+      {
+        role: 'user',
+        content: buildEnhanceUserPrompt(title, description, tags),
       },
     ],
     true,

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { 
   X, 
@@ -32,6 +32,11 @@ export default function TaskModal({ taskId, onClose }: TaskModalProps) {
   const [aiResult, setAiResult] = useState<TaskEnhancementResult | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'details' | 'comments' | 'ai' | 'dependencies'>('details');
+  const [newTag, setNewTag] = useState('');
+
+  useEffect(() => {
+    setNewTag('');
+  }, [taskId]);
 
   if (!task) return null;
 
@@ -59,7 +64,7 @@ export default function TaskModal({ taskId, onClose }: TaskModalProps) {
     setAiError(null);
     setActiveTab('ai');
     try {
-      const result = await enhanceTask(task.title, task.description);
+      const result = await enhanceTask(task.title, task.description, task.tags);
       setAiResult(result);
     } catch (error) {
       console.error(error);
@@ -112,6 +117,17 @@ export default function TaskModal({ taskId, onClose }: TaskModalProps) {
     });
     setAiResult(null);
     setAiError(null);
+  };
+
+  const commitNewTag = () => {
+    const raw = newTag.trim().replace(/\s+/g, ' ');
+    if (!raw) return;
+    if (task.tags.some((t) => t.toLowerCase() === raw.toLowerCase())) {
+      setNewTag('');
+      return;
+    }
+    updateTask(taskId, { tags: [...task.tags, raw] });
+    setNewTag('');
   };
 
   const toggleDependency = (depId: string) => {
@@ -308,23 +324,45 @@ export default function TaskModal({ taskId, onClose }: TaskModalProps) {
                 <div className="space-y-3">
                   <h4 className="text-xs font-medium text-kf-meta-blue">Tags</h4>
                   <div className="flex flex-wrap gap-2">
-                    {task.tags.map(tag => (
-                      <span key={tag} className="flex items-center gap-2 px-3 py-1.5 bg-kf-warm-gray border border-kf-divider-gray text-[10px] font-black uppercase tracking-widest text-kf-slate rounded-lg hover:border-kf-divider transition-colors cursor-pointer group/tag">
-                        <TagIcon size={12} className="text-kf-meta-blue" />
-                        {tag}
-                        <X 
-                          size={12} 
-                          className="text-kf-secondary-text hover:text-rose-500 transition-colors" 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            updateTask(taskId, { tags: task.tags.filter(t => t !== tag) });
-                          }}
-                        />
+                    {task.tags.map((tag) => (
+                      <span
+                        key={tag}
+                        className="flex items-center gap-2 px-3 py-1.5 bg-kf-warm-gray border border-kf-divider-gray text-[10px] font-black uppercase tracking-widest text-kf-slate rounded-lg group/tag"
+                      >
+                        <TagIcon size={12} className="text-kf-meta-blue shrink-0" />
+                        <span className="truncate max-w-[12rem]">{tag}</span>
+                        <button
+                          type="button"
+                          aria-label={`Remove tag ${tag}`}
+                          className="text-kf-secondary-text hover:text-rose-500 transition-colors p-0.5 rounded"
+                          onClick={() => updateTask(taskId, { tags: task.tags.filter((t) => t !== tag) })}
+                        >
+                          <X size={12} />
+                        </button>
                       </span>
                     ))}
-                    <button className="px-3 py-1.5 bg-kf-warm-gray border border-dashed border-kf-divider-gray text-kf-secondary-text hover:border-kf-meta-blue/30 hover:text-kf-slate text-[10px] font-black uppercase tracking-widest rounded-lg transition-all flex items-center gap-2">
+                  </div>
+                  <div className="flex flex-wrap gap-2 items-stretch sm:items-center">
+                    <input
+                      type="text"
+                      className="kf-input text-sm py-2 min-w-0 flex-1 sm:max-w-xs"
+                      placeholder="Type a tag and press Enter…"
+                      value={newTag}
+                      onChange={(e) => setNewTag(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          commitNewTag();
+                        }
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={commitNewTag}
+                      className="px-4 py-2 bg-kf-warm-gray border border-dashed border-kf-divider-gray text-kf-secondary-text hover:border-kf-meta-blue/40 hover:text-kf-meta-blue text-[10px] font-black uppercase tracking-widest rounded-xl transition-all inline-flex items-center justify-center gap-2 shrink-0"
+                    >
                       <Plus size={12} />
-                      Append Tag
+                      Add tag
                     </button>
                   </div>
                 </div>
