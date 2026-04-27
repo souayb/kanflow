@@ -1,6 +1,6 @@
 # Rust dependencies
 /backend/target/
-Cargo.lock
+# backend/Cargo.lock is tracked for reproducible Docker/CI builds.
 
 # Node dependencies
 /frontend/node_modules/
