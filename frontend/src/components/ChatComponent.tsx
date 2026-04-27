@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useApp } from '../AppContext';
 import { cn } from '../lib/utils';
 import Avatar from './Avatar';
+import { chatWithAI } from '../lib/ai';
 import { db, auth } from '../lib/firebase';
 import { 
   collection, 
@@ -131,20 +132,25 @@ export default function ChatComponent() {
         type: 'user'
       });
 
-      // Demo AI reply when message mentions Kanflow
-      if (messageContent.toLowerCase().includes('kanflow')) {
-        setIsTyping(true);
-        setTimeout(async () => {
-          await addDoc(collection(db, 'projects', activeProjectId, 'messages'), {
-            userId: 'kanflow-ai',
-            userName: 'Kanflow AI',
-            content: `Thanks for the note about ${activeProject?.name}. I can help summarize blockers or suggest next tasks when you need it.`,
-            projectId: activeProjectId,
-            createdAt: serverTimestamp(),
-            type: 'ai'
-          });
-          setIsTyping(false);
-        }, 2000);
+      // AI reply via local Ollama
+      setIsTyping(true);
+      try {
+        const projectContext = activeProject
+          ? `Project "${activeProject.name}", ${activeProject.description || 'no description'}`
+          : undefined;
+        const aiReply = await chatWithAI(messageContent, projectContext);
+        await addDoc(collection(db, 'projects', activeProjectId, 'messages'), {
+          userId: 'kanflow-ai',
+          userName: 'Kanflow AI',
+          content: aiReply,
+          projectId: activeProjectId,
+          createdAt: serverTimestamp(),
+          type: 'ai'
+        });
+      } catch (aiError) {
+        console.error('Ollama AI reply failed:', aiError);
+      } finally {
+        setIsTyping(false);
       }
     } catch (error) {
       console.error("Error sending message:", error);

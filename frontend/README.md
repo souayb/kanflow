@@ -1,20 +1,24 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Kanflow — Frontend
 
-# Run and deploy your AI Studio app
+React 19 + TypeScript + Vite + TailwindCSS v4 single-page application.
 
-This contains everything you need to run your app locally.
+See the [root README](../README.md) for full setup instructions, Docker Compose usage, and project structure.
 
-View your app in AI Studio: https://ai.studio/apps/25382c59-b4bf-4468-8093-f4107c291db8
+## Development
 
-## Run Locally
+```bash
+npm install
+cp .env.example .env.local   # configure VITE_OLLAMA_URL / VITE_OLLAMA_MODEL
+npm run dev                   # http://localhost:3000
+```
 
-**Prerequisites:**  Node.js
+## Available Scripts
 
-
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Start Vite dev server with HMR |
+| `npm run build` | Production build → `dist/` |
+| `npm run preview` | Serve the production build locally |
+| `npm test` | Run Vitest unit tests once |
+| `npm run test:watch` | Run Vitest in watch mode |
+| `npm run lint` | TypeScript type-check (`tsc --noEmit`) |

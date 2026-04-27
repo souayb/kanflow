@@ -1,107 +1,115 @@
-import { GoogleGenAI, Type } from "@google/genai";
+const OLLAMA_URL = (import.meta as any).env?.VITE_OLLAMA_URL ?? 'http://localhost:11434';
+const OLLAMA_MODEL = (import.meta as any).env?.VITE_OLLAMA_MODEL ?? 'llama3.2';
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+interface OllamaMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+}
+
+async function ollamaChat(messages: OllamaMessage[], jsonMode = false): Promise<string> {
+  const response = await fetch(`${OLLAMA_URL}/api/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: OLLAMA_MODEL,
+      messages,
+      stream: false,
+      ...(jsonMode && { format: 'json' }),
+    }),
+  });
+  if (!response.ok) throw new Error(`Ollama error ${response.status}: ${response.statusText}`);
+  const data = await response.json();
+  const content = data.message?.content;
+  if (!content) throw new Error('Empty response from Ollama');
+  return content;
+}
 
 export async function enhanceTask(title: string, description: string) {
-  try {
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: `You are the Zenith Neural Prime, a high-performance logic optimizer. Your mission is to refactor the following work unit (Task Node) for maximum operational efficiency and zero-latency execution.
-      
-      Original Title: ${title}
-      Original Description: ${description}
-      
-      Refinement Guidelines:
-      1. title: Crystal-clear, action-oriented, and concise.
-      2. description: Technical, specific, and unambiguous.
-      3. definitionOfDone: 3-5 objective criteria that signal terminal state.
-      4. subtasks: Granular logic blocks required for completion.
-      5. potentialRisks: Threat vectors that could delay execution.
-      6. suggestedPriority: low, medium, or high.
-      7. aiThinking: A brief analysis of why these optimizations were made.
-      
-      Return the response in JSON format.`,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            enhancedTitle: { type: Type.STRING },
-            enhancedDescription: { type: Type.STRING },
-            subtasks: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING }
-            },
-            potentialRisks: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING }
-            },
-            suggestedPriority: { 
-              type: Type.STRING,
-              enum: ["low", "medium", "high"]
-            },
-            definitionOfDone: { type: Type.STRING, description: "Clear criteria for when the task is considered finished" },
-            aiThinking: { type: Type.STRING, description: "Your brief reasoning behind these improvements" }
-          },
-          required: ["enhancedTitle", "enhancedDescription", "suggestedPriority", "definitionOfDone"]
-        }
-      }
-    });
+  const content = await ollamaChat([
+    {
+      role: 'system',
+      content:
+        'You are a high-performance task optimizer. Always respond with valid JSON only — no markdown fences, no prose outside the JSON object.',
+    },
+    {
+      role: 'user',
+      content: `Enhance this task for maximum clarity and actionability.
 
-    const text = response.text;
-    if (!text) throw new Error("No response from Gemini");
-    return JSON.parse(text);
-  } catch (error) {
-    console.error("AI Enhancement Error:", error);
-    throw error;
+Task Title: ${title}
+Task Description: ${description}
+
+Return a single JSON object with exactly these keys:
+{
+  "enhancedTitle": "string",
+  "enhancedDescription": "string",
+  "subtasks": ["string"],
+  "potentialRisks": ["string"],
+  "suggestedPriority": "low" | "medium" | "high",
+  "definitionOfDone": "string",
+  "aiThinking": "string"
+}`,
+    },
+  ], true);
+
+  try {
+    return JSON.parse(content);
+  } catch {
+    // Strip possible markdown fences if model ignores the instruction
+    const cleaned = content.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
+    return JSON.parse(cleaned);
   }
 }
 
 export async function refineTaskToSMART(title: string, description: string) {
+  const content = await ollamaChat([
+    {
+      role: 'system',
+      content:
+        'You are a project management consultant. Always respond with valid JSON only — no markdown fences, no prose outside the JSON object.',
+    },
+    {
+      role: 'user',
+      content: `Transform this task into a SMART unit (Specific, Measurable, Achievable, Relevant, Time-bound).
+
+Task Title: ${title}
+Task Description: ${description}
+
+Return a single JSON object with exactly these keys:
+{
+  "smartTitle": "string",
+  "smartDescription": "string",
+  "logic": "string"
+}`,
+    },
+  ], true);
+
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: `You are a high-performance project management consultant. Transform this task into a "SMART" unit (Specific, Measurable, Achievable, Relevant, Time-bound).
-      
-      Original Title: ${title}
-      Original Description: ${description}
-      
-      Focus on reducing ambiguity. The title should be action-oriented. The description should include specific deliverables and success criteria.`,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            smartTitle: { type: Type.STRING },
-            smartDescription: { type: Type.STRING },
-            logic: { type: Type.STRING, description: "Markdown-formatted explanation of the neural refinements made to satisfy SMART criteria" }
-          },
-          required: ["smartTitle", "smartDescription", "logic"]
-        }
-      }
-    });
-    const text = response.text;
-    if (!text) throw new Error("No response from Gemini");
-    return JSON.parse(text);
-  } catch (error) {
-    console.error("SMART Refinement Error:", error);
-    throw error;
+    return JSON.parse(content);
+  } catch {
+    const cleaned = content.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
+    return JSON.parse(cleaned);
   }
 }
 
-export async function summarizeProjectProgress(projectData: any) {
-  try {
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: `Summarize the progress and health of this project. Identify bottlenecks or areas for improvement.
-      Project Data: ${JSON.stringify(projectData)}`,
-      config: {
-        systemInstruction: "You are a senior project analyst. Provide concise, impactful executive summaries.",
-      }
-    });
-    return response.text;
-  } catch (error) {
-    console.error("AI Summary Error:", error);
-    return "Could not generate AI summary at this time.";
-  }
+export async function summarizeProjectProgress(projectData: unknown) {
+  return ollamaChat([
+    {
+      role: 'system',
+      content: 'You are a senior project analyst. Provide concise, impactful executive summaries in plain text.',
+    },
+    {
+      role: 'user',
+      content: `Summarize the progress and health of this project. Identify bottlenecks or areas for improvement.\n\nProject Data: ${JSON.stringify(projectData)}`,
+    },
+  ]);
+}
+
+export async function chatWithAI(userMessage: string, projectContext?: string): Promise<string> {
+  return ollamaChat([
+    {
+      role: 'system',
+      content: `You are Kanflow AI, a helpful assistant for project and task management. Keep answers concise and practical.${projectContext ? ` Context: ${projectContext}` : ''}`,
+    },
+    { role: 'user', content: userMessage },
+  ]);
 }

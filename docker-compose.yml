@@ -32,6 +32,43 @@ services:
       retries: 10
       start_period: 15s
 
+  # ── Local LLM (Ollama) ───────────────────────────────────────────────────────
+
+  ollama:
+    image: ollama/ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - kanflow_ollama:/root/.ollama
+    environment:
+      # Allow browser requests from any origin (required for direct fetch from frontend)
+      OLLAMA_ORIGINS: "*"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/version || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    # Uncomment to enable GPU acceleration (requires nvidia-container-toolkit):
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  # Pulls the default model on first start; exits cleanly once done.
+  ollama-pull:
+    image: ollama/ollama
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["ollama", "pull", "${OLLAMA_MODEL:-llama3.2}"]
+    restart: "no"
+
   # ── Rust API server ──────────────────────────────────────────────────────────
 
   backend:
@@ -54,21 +91,24 @@ services:
     restart: on-failure
 
   # ── React frontend (Vite build → Nginx) ──────────────────────────────────────
+  # VITE_OLLAMA_URL points to the HOST-exposed Ollama port because the browser
+  # (running on the host) calls Ollama directly — not through Docker networking.
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        # Pass GEMINI_API_KEY from the host environment (or .env at repo root).
-        # Leave unset to build without AI features.
-        GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+        VITE_OLLAMA_URL: "http://localhost:11434"
+        VITE_OLLAMA_MODEL: "${OLLAMA_MODEL:-llama3.2}"
     ports:
       - "3000:80"
     depends_on:
       - backend
+      - ollama
     restart: on-failure
 
 volumes:
   kanflow_pg:
   kanflow_mongo:
+  kanflow_ollama:
