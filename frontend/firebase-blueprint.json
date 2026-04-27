@@ -1,0 +1,25 @@
+{
+  "entities": {
+    "chatMessage": {
+      "title": "Chat Message",
+      "description": "A message sent in a project chat",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "projectId": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userAvatar": { "type": "string" },
+        "content": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["id", "projectId", "userId", "userName", "content", "createdAt"]
+    }
+  },
+  "firestore": {
+    "projects/{projectId}/messages/{messageId}": {
+      "schema": "chatMessage",
+      "description": "Collection of messages for a specific project"
+    }
+  }
+}

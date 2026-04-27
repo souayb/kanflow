@@ -1,0 +1,117 @@
+/* Fonts: use <link> in index.html. Do not @import Google Fonts here — Tailwind expands first and PostCSS rejects @import after other rules. */
+@import "tailwindcss";
+
+/* Kanflow — Meta Store–inspired tokens (DESIGN.md) */
+@theme {
+  --font-sans: "Montserrat", "Helvetica Neue", Helvetica, Arial, ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, monospace;
+
+  --color-kf-white: #ffffff;
+  --color-kf-soft-gray: #f1f4f7;
+  --color-kf-warm-gray: #f7f8fa;
+  --color-kf-web-wash: #f0f2f5;
+  --color-kf-baby-blue: #e8f3ff;
+  --color-kf-near-black: #1c1e21;
+  --color-kf-charcoal: #1c2b33;
+  --color-kf-slate: #5d6c7b;
+  --color-kf-secondary-text: #65676b;
+  --color-kf-icon-secondary: #465a69;
+  --color-kf-divider: #ced0d4;
+  --color-kf-divider-gray: #dee3e9;
+  --color-kf-meta-blue: #0064e0;
+  --color-kf-meta-blue-hover: #0143b5;
+  --color-kf-meta-blue-pressed: #004bb9;
+  --color-kf-meta-blue-light: #47a5fa;
+  --color-kf-link: #385898;
+  --color-kf-success: #31a24c;
+  --color-kf-error: #e41e3f;
+  --color-kf-warning: #f7b928;
+  --color-kf-overlay: rgba(0, 0, 0, 0.6);
+
+  --shadow-kf-card: 0 12px 28px 0 rgba(0, 0, 0, 0.2), 0 2px 4px 0 rgba(0, 0, 0, 0.1);
+  --shadow-kf-subtle: 0 2px 4px 0 rgba(0, 0, 0, 0.1);
+
+  --radius-kf-input: 8px;
+  --radius-kf-card: 20px;
+  --radius-kf-feature: 24px;
+  --radius-kf-pill: 100px;
+}
+
+@layer base {
+  html {
+    @apply antialiased;
+  }
+  body {
+    @apply font-sans text-kf-charcoal bg-kf-soft-gray;
+    font-feature-settings: "ss01" 0, "ss02" 0;
+  }
+}
+
+@layer components {
+  .kf-nav-link {
+    @apply text-kf-charcoal/90 text-[16px] font-medium tracking-tight;
+    @apply hover:underline underline-offset-4 decoration-kf-divider-gray;
+  }
+  .kf-btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-full px-[22px] py-2.5;
+    @apply bg-kf-meta-blue text-kf-white text-sm font-normal;
+    @apply tracking-[-0.14px] border-0 transition-all duration-200;
+    @apply hover:bg-kf-meta-blue-hover hover:scale-110 active:scale-90 active:bg-kf-meta-blue-pressed;
+    @apply focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-kf-meta-blue-light;
+    @apply disabled:bg-kf-divider-gray disabled:text-[#8595a4] disabled:cursor-not-allowed disabled:hover:scale-100;
+  }
+  .kf-btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-full px-[22px] py-2.5 border-2 text-sm font-normal;
+    @apply border-[rgba(10,19,23,0.12)] text-kf-charcoal/50 bg-transparent tracking-[-0.14px];
+    @apply transition-all duration-200;
+    @apply hover:bg-[rgba(70,90,105,0.7)] hover:text-kf-white;
+  }
+  .kf-card {
+    @apply bg-kf-white rounded-[20px] border border-kf-divider-gray/80;
+    box-shadow: var(--shadow-kf-subtle);
+    @apply transition-all duration-300;
+  }
+  .kf-card-elevated {
+    @apply bg-kf-white rounded-[20px] border border-kf-divider-gray/60;
+    box-shadow: var(--shadow-kf-card);
+    @apply transition-all duration-300 hover:-translate-y-0.5;
+  }
+  .kf-input {
+    @apply w-full rounded-[8px] border border-kf-divider bg-kf-white px-3 py-2.5 text-base text-kf-charcoal;
+    @apply placeholder:text-kf-secondary-text transition-shadow duration-200;
+    @apply focus:border-[hsl(214,89%,52%)] focus:ring-[3px] focus:ring-[hsl(214,89%,52%)]/25 focus:outline-none;
+  }
+  .kf-section-dark {
+    @apply bg-kf-near-black text-kf-white;
+  }
+  .kf-glass-header {
+    background: rgba(255, 255, 255, 0.92);
+    @apply backdrop-blur-md border-b border-black/10;
+  }
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--color-kf-divider-gray);
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--color-kf-divider);
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

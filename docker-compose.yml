@@ -1,0 +1,74 @@
+services:
+
+  # ── Data stores ─────────────────────────────────────────────────────────────
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: kanflow
+      POSTGRES_PASSWORD: kanflow
+      POSTGRES_DB: kanflow
+    ports:
+      - "5432:5432"
+    volumes:
+      - kanflow_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kanflow -d kanflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - kanflow_mongo:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  # ── Rust API server ──────────────────────────────────────────────────────────
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgres://kanflow:kanflow@postgres:5432/kanflow
+      MONGO_URI: mongodb://mongo:27017
+      MONGO_DB: kanflow
+      KANFLOW_HOST: 0.0.0.0
+      KANFLOW_PORT: "8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    restart: on-failure
+
+  # ── React frontend (Vite build → Nginx) ──────────────────────────────────────
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Pass GEMINI_API_KEY from the host environment (or .env at repo root).
+        # Leave unset to build without AI features.
+        GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: on-failure
+
+volumes:
+  kanflow_pg:
+  kanflow_mongo:
