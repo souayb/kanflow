@@ -33,7 +33,7 @@ A local-first Kanban task management application. Manage projects, columns, and 
 | Frontend | React 19, TypeScript, Vite 6, TailwindCSS v4 |
 | Backend | Rust (Axum), sqlx + PostgreSQL, MongoDB |
 | AI | Ollama (local, no API key needed) |
-| Persistence | localStorage + Firebase (chat), Postgres + Mongo (API) |
+| Persistence | localStorage (tasks + per-project chat), Postgres + Mongo (API) |
 | Containerization | Docker Compose |
 
 ---
@@ -290,7 +290,6 @@ kanban/
         ├── constants.ts      # Mock seed data
         ├── lib/
         │   ├── ai.ts         # Ollama client (enhanceTask, chat, SMART, summary)
-        │   ├── firebase.ts   # Firebase config (chat persistence)
         │   └── utils.ts      # cn, formatDate, avatar helpers
         └── components/
             ├── Layout.tsx

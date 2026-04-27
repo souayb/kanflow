@@ -1,29 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, X, MessageSquare, Bot, User as UserIcon, LogIn } from 'lucide-react';
+import { Send, X, MessageSquare, Bot } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useApp } from '../AppContext';
 import { cn } from '../lib/utils';
 import Avatar from './Avatar';
 import { chatWithAI } from '../lib/ai';
-import { db, auth } from '../lib/firebase';
-import { 
-  collection, 
-  addDoc, 
-  query, 
-  orderBy, 
-  onSnapshot, 
-  serverTimestamp,
-  type DocumentData,
-  doc,
-  setDoc,
-  getDoc
-} from 'firebase/firestore';
-import { 
-  signInWithPopup, 
-  GoogleAuthProvider, 
-  onAuthStateChanged,
-  type User as FirebaseUser 
-} from 'firebase/auth';
 
 interface Message {
   id: string;
@@ -31,8 +12,38 @@ interface Message {
   senderName: string;
   senderAvatar?: string;
   content: string;
-  timestamp: any;
+  timestamp: number;
   type: 'user' | 'ai';
+}
+
+function chatStorageKey(projectId: string): string {
+  return `kanflow_chat_${projectId}`;
+}
+
+function loadMessages(projectId: string): Message[] {
+  try {
+    const raw = localStorage.getItem(chatStorageKey(projectId));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (m): m is Message =>
+        m &&
+        typeof m === 'object' &&
+        typeof (m as Message).id === 'string' &&
+        typeof (m as Message).content === 'string',
+    );
+  } catch {
+    return [];
+  }
+}
+
+function saveMessages(projectId: string, messages: Message[]): void {
+  try {
+    localStorage.setItem(chatStorageKey(projectId), JSON.stringify(messages));
+  } catch {
+    /* quota or private mode */
+  }
 }
 
 export default function ChatComponent() {
@@ -40,62 +51,23 @@ export default function ChatComponent() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
-  const [user, setUser] = useState<FirebaseUser | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const { activeProjectId, projects } = useApp();
+  const { activeProjectId, projects, currentUser } = useApp();
 
-  const activeProject = projects.find(p => p.id === activeProjectId);
+  const activeProject = projects.find((p) => p.id === activeProjectId);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (u) => {
-      setUser(u);
-    });
-    return () => unsubscribe();
-  }, []);
+    if (!activeProjectId) {
+      setMessages([]);
+      return;
+    }
+    setMessages(loadMessages(activeProjectId));
+  }, [activeProjectId]);
 
   useEffect(() => {
     if (!activeProjectId) return;
-
-    // Ensure project document exists for relational sync (Master Gate)
-    const syncProject = async () => {
-      if (activeProject) {
-        const projectRef = doc(db, 'projects', activeProjectId);
-        const projectSnap = await getDoc(projectRef);
-        if (!projectSnap.exists()) {
-          await setDoc(projectRef, {
-            name: activeProject.name,
-            createdAt: serverTimestamp()
-          });
-        }
-      }
-    };
-    syncProject();
-
-    const q = query(
-      collection(db, 'projects', activeProjectId, 'messages'),
-      orderBy('createdAt', 'asc')
-    );
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const newMessages = snapshot.docs.map(doc => {
-        const data = doc.data();
-        return {
-          id: doc.id,
-          senderId: data.userId,
-          senderName: data.userName,
-          senderAvatar: data.userAvatar,
-          content: data.content,
-          timestamp: data.createdAt?.toMillis() || Date.now(),
-          type: data.type || 'user'
-        } as Message;
-      });
-      setMessages(newMessages);
-    }, (error) => {
-      console.error("Firestore Error:", error);
-    });
-
-    return () => unsubscribe();
-  }, [activeProjectId, activeProject]);
+    saveMessages(activeProjectId, messages);
+  }, [messages, activeProjectId]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -105,55 +77,43 @@ export default function ChatComponent() {
     scrollToBottom();
   }, [messages, isTyping]);
 
-  const handleLogin = async () => {
-    try {
-      const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
-    } catch (error) {
-      console.error("Login failed:", error);
-    }
-  };
-
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || !user || !activeProjectId) return;
+    if (!input.trim() || !activeProjectId || !currentUser) return;
 
-    const messageContent = input;
+    const messageContent = input.trim();
     setInput('');
 
-    try {
-      await addDoc(collection(db, 'projects', activeProjectId, 'messages'), {
-        userId: user.uid,
-        userName: user.displayName || 'Anonymous',
-        userAvatar: user.photoURL || '',
-        content: messageContent,
-        projectId: activeProjectId,
-        createdAt: serverTimestamp(),
-        type: 'user'
-      });
+    const userMsg: Message = {
+      id: crypto.randomUUID(),
+      senderId: currentUser.id,
+      senderName: currentUser.name,
+      senderAvatar: currentUser.avatar,
+      content: messageContent,
+      timestamp: Date.now(),
+      type: 'user',
+    };
+    setMessages((prev) => [...prev, userMsg]);
 
-      // AI reply via local Ollama
-      setIsTyping(true);
-      try {
-        const projectContext = activeProject
-          ? `Project "${activeProject.name}", ${activeProject.description || 'no description'}`
-          : undefined;
-        const aiReply = await chatWithAI(messageContent, projectContext);
-        await addDoc(collection(db, 'projects', activeProjectId, 'messages'), {
-          userId: 'kanflow-ai',
-          userName: 'Kanflow AI',
-          content: aiReply,
-          projectId: activeProjectId,
-          createdAt: serverTimestamp(),
-          type: 'ai'
-        });
-      } catch (aiError) {
-        console.error('Ollama AI reply failed:', aiError);
-      } finally {
-        setIsTyping(false);
-      }
-    } catch (error) {
-      console.error("Error sending message:", error);
+    setIsTyping(true);
+    try {
+      const projectContext = activeProject
+        ? `Project "${activeProject.name}", ${activeProject.description || 'no description'}`
+        : undefined;
+      const aiReply = await chatWithAI(messageContent, projectContext);
+      const aiMsg: Message = {
+        id: crypto.randomUUID(),
+        senderId: 'kanflow-ai',
+        senderName: 'Kanflow AI',
+        content: aiReply,
+        timestamp: Date.now(),
+        type: 'ai',
+      };
+      setMessages((prev) => [...prev, aiMsg]);
+    } catch (aiError) {
+      console.error('Ollama AI reply failed:', aiError);
+    } finally {
+      setIsTyping(false);
     }
   };
 
@@ -192,26 +152,22 @@ export default function ChatComponent() {
             <div className="flex-1 overflow-y-auto p-5 space-y-5 custom-scrollbar bg-kf-soft-gray/40">
               {messages.length === 0 && !isTyping && (
                 <div className="h-full flex flex-col items-center justify-center text-center px-6">
-                   <div className="w-12 h-12 rounded-full bg-kf-white flex items-center justify-center mb-4 border border-kf-divider-gray">
-                      <Bot size={24} className="text-kf-slate" />
-                   </div>
-                   <p className="text-xs text-kf-slate leading-relaxed px-2">
-                     Sign in to send messages. Firebase stores chat per project (MISSION §5.11).
-                   </p>
+                  <div className="w-12 h-12 rounded-full bg-kf-white flex items-center justify-center mb-4 border border-kf-divider-gray">
+                    <Bot size={24} className="text-kf-slate" />
+                  </div>
+                  <p className="text-xs text-kf-slate leading-relaxed px-2">
+                    Messages are stored in this browser (localStorage). The Kanflow API can back chat with MongoDB when wired up.
+                  </p>
                 </div>
               )}
               {messages.map((m) => (
-                <div 
-                  key={m.id} 
-                  className={cn(
-                    "flex gap-3",
-                    m.senderId === user?.uid ? "flex-row-reverse" : ""
-                  )}
-                >
-                  <div className={cn(
-                    "w-8 h-8 rounded-full flex items-center justify-center border shrink-0 overflow-hidden",
-                    m.type === 'ai' ? "bg-kf-baby-blue border-kf-meta-blue/25 text-kf-meta-blue" : "border-kf-divider-gray"
-                  )}>
+                <div key={m.id} className={cn('flex gap-3', m.senderId === currentUser?.id ? 'flex-row-reverse' : '')}>
+                  <div
+                    className={cn(
+                      'w-8 h-8 rounded-full flex items-center justify-center border shrink-0 overflow-hidden',
+                      m.type === 'ai' ? 'bg-kf-baby-blue border-kf-meta-blue/25 text-kf-meta-blue' : 'border-kf-divider-gray',
+                    )}
+                  >
                     {m.type === 'ai' ? (
                       <Bot size={16} />
                     ) : (
@@ -219,20 +175,24 @@ export default function ChatComponent() {
                     )}
                   </div>
                   <div className="flex flex-col gap-1 max-w-[75%]">
-                    <div className={cn(
-                      "text-[10px] font-medium text-kf-secondary-text px-1",
-                      m.senderId === user?.uid ? "text-right" : ""
-                    )}>
+                    <div
+                      className={cn(
+                        'text-[10px] font-medium text-kf-secondary-text px-1',
+                        m.senderId === currentUser?.id ? 'text-right' : '',
+                      )}
+                    >
                       {m.senderName}
                     </div>
-                    <div className={cn(
-                      "p-3 rounded-[16px] text-sm leading-relaxed",
-                      m.senderId === user?.uid
-                        ? "bg-kf-meta-blue text-kf-white rounded-tr-none shadow-md"
-                        : m.type === 'ai'
-                          ? "bg-kf-white text-kf-charcoal rounded-tl-none border border-kf-meta-blue/25 font-medium"
-                          : "bg-kf-white text-kf-charcoal rounded-tl-none border border-kf-divider-gray"
-                    )}>
+                    <div
+                      className={cn(
+                        'p-3 rounded-[16px] text-sm leading-relaxed',
+                        m.senderId === currentUser?.id
+                          ? 'bg-kf-meta-blue text-kf-white rounded-tr-none shadow-md'
+                          : m.type === 'ai'
+                            ? 'bg-kf-white text-kf-charcoal rounded-tl-none border border-kf-meta-blue/25 font-medium'
+                            : 'bg-kf-white text-kf-charcoal rounded-tl-none border border-kf-divider-gray',
+                      )}
+                    >
                       {m.content}
                     </div>
                   </div>
@@ -253,19 +213,10 @@ export default function ChatComponent() {
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Input / Login */}
             <div className="p-4 border-t border-kf-divider-gray bg-kf-white">
-              {!user ? (
+              {!currentUser ? (
                 <div className="text-center py-4">
-                  <p className="text-xs text-kf-slate mb-3">Sign in with Google to post to project chat.</p>
-                  <button
-                    type="button"
-                    onClick={handleLogin}
-                    className="w-full py-3 kf-btn-primary gap-2"
-                  >
-                    <LogIn size={16} />
-                    Sign in
-                  </button>
+                  <p className="text-xs text-kf-slate mb-3">Select a profile to send messages.</p>
                 </div>
               ) : (
                 <form onSubmit={handleSend} className="relative">
@@ -290,7 +241,8 @@ export default function ChatComponent() {
         )}
       </AnimatePresence>
 
-      <button 
+      <button
+        type="button"
         onClick={() => setIsOpen(!isOpen)}
         className={cn(
           'w-14 h-14 min-w-[56px] min-h-[56px] rounded-full flex items-center justify-center shadow-2xl transition-all duration-300 hover:scale-110 active:scale-95 group relative',

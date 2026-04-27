@@ -13,7 +13,7 @@
 * **Spec-first**: Every feature must map to a defined spec section.
 * **Atomic features**: Small, testable units.
 * **Deterministic behavior**: No ambiguous UI states.
-* **Offline-tolerant**: LocalStorage persistence with Firebase sync.
+* **Offline-tolerant**: LocalStorage persistence; optional sync with the Kanflow API when enabled.
 * **Extensible architecture**: Context-driven state, composable views.
 
 ---
@@ -28,9 +28,9 @@
 | Icons | Lucide React |
 | Animation | Motion (Framer Motion v12) |
 | Charts | Recharts |
-| Backend | Rust (`kanflow-server`): PostgreSQL (structured domain) + MongoDB (chat, config, blobs); client may still use Firebase for auth/chat during migration |
+| Backend | Rust (`kanflow-server`): PostgreSQL (structured domain) + MongoDB (chat, config, blobs) |
 | AI | Google Gemini (`@google/genai`) |
-| Persistence | localStorage (Firebase sync planned) |
+| Persistence | localStorage; API sync optional |
 | Design System | Meta-inspired (see DESIGN.md) |
 
 ---
@@ -301,7 +301,7 @@ ChatMessage {
 ### 5.11 Collaboration (Chat)
 
 * Per-project chat messages (`ChatMessage` entity)
-* Real-time capable (Firebase Firestore)
+* Persists in-browser per project (`kanflow_chat_<projectId>`); API/WebSocket when wired to the Rust service
 
 ---
 
@@ -354,15 +354,9 @@ AppContextType {
 * Environment: copy `.env.example` — `DATABASE_URL`, `MONGO_URI`, `MONGO_DB`, `KANFLOW_PORT`.
 * Health: `GET /health` — used in automated contract tests without live databases.
 
-### Firebase (client)
-
-* Project config: `frontend/src/lib/firebase.ts`
-* Chat may use Firestore until the HTTP API client is wired for Mongo-backed chat.
-
 ### AI
 
-* Client: `src/lib/ai.ts` wraps `@google/genai`
-* API key: `GEMINI_API_KEY` env var (`.env.example` provided)
+* Client: `frontend/src/lib/ai.ts` — Ollama (`VITE_OLLAMA_URL`, `VITE_OLLAMA_MODEL`); see `frontend/.env.example`
 
 ---
 
@@ -408,7 +402,7 @@ See `DESIGN.md` for the full Meta-inspired design system.
 
 * Network failure → show toast + retry
 * Invalid input → inline validation
-* Firebase unavailable → fall back to localStorage
+* API unavailable → continue with localStorage-backed state where applicable
 * Empty task title → blocked at submit
 
 ---
@@ -436,8 +430,8 @@ See `DESIGN.md` for the full Meta-inspired design system.
 
 ## 12. Future Enhancements
 
-* Firebase Firestore full sync (replace localStorage)
-* Real-time multi-user collaboration (Firestore listeners)
+* Full API sync for projects/tasks (replace or mirror localStorage)
+* Real-time multi-user collaboration (WebSocket or SSE against Kanflow server)
 * File attachments on tasks
 * Activity log / audit trail
 * Push notifications

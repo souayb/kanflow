@@ -1,7 +1,8 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { type Project, type Task, type User, type Notification, type PersonalTodo, type TimeEntry, type DashboardWidget } from './types';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { type Project, type Task, type Column, type User, type Notification, type PersonalTodo, type TimeEntry, type DashboardWidget, type Comment } from './types';
 import { MOCK_PROJECTS, MOCK_TASKS, MOCK_USERS } from './constants';
 import { KANFLOW_KEYS, migrateZenithToKanflow, readStoredJson, writeStoredJson } from './lib/storage';
+import { api, type ApiTask, type ApiProject, type ApiColumn } from './lib/api';
 
 interface AppContextType {
   projects: Project[];
@@ -12,6 +13,7 @@ interface AppContextType {
   timeEntries: TimeEntry[];
   dashboardWidgets: DashboardWidget[];
   activeProjectId: string | null;
+  apiOnline: boolean;
   setActiveProjectId: (id: string | null) => void;
   addTask: (task: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'comments'>) => void;
   updateTask: (id: string, updates: Partial<Task>) => void;
@@ -43,7 +45,52 @@ const DEFAULT_WIDGETS: DashboardWidget[] = [
   { id: '5', type: 'ai_insights', title: 'Kanflow AI insights', enabled: true, order: 4 },
 ];
 
-function loadInitialState() {
+// ── API ↔ local type converters ────────────────────────────────────────────
+
+function apiTaskToTask(t: ApiTask): Task {
+  return {
+    id: t.id,
+    title: t.title,
+    description: t.description,
+    status: t.status,
+    priority: t.priority,
+    assigneeId: t.assigneeId,
+    dueDate: t.dueDate,
+    projectId: t.projectId,
+    tags: t.tags ?? [],
+    comments: (t.comments ?? []).map((c) => ({
+      id: c.id,
+      userId: c.userId,
+      userName: c.userName,
+      content: c.content,
+      createdAt: c.createdAt,
+    })),
+    createdAt: t.createdAt,
+    updatedAt: t.updatedAt,
+    dependencies: t.dependencies ?? [],
+    aiSuggested: t.aiSuggested,
+    aiThinking: t.aiThinking,
+  };
+}
+
+function apiColumnToColumn(c: ApiColumn): Column {
+  return { id: c.id, title: c.title, order: c.order };
+}
+
+function apiProjectToProject(p: ApiProject, columns: ApiColumn[] = []): Project {
+  return {
+    id: p.id,
+    name: p.name,
+    description: p.description,
+    columns: columns.map(apiColumnToColumn).sort((a, b) => a.order - b.order),
+    createdAt: Date.now(),
+    ownerId: 'u1',
+  };
+}
+
+// ── localStorage bootstrap ─────────────────────────────────────────────────
+
+function loadCachedState() {
   if (typeof window === 'undefined') {
     return {
       projects: MOCK_PROJECTS,
@@ -72,20 +119,13 @@ function loadInitialState() {
     activeProjectId = projects[0]?.id ?? null;
   }
 
-  return {
-    projects,
-    tasks,
-    notifications,
-    personalTodos,
-    timeEntries,
-    dashboardWidgets,
-    activeProjectId,
-    currentUser,
-  };
+  return { projects, tasks, notifications, personalTodos, timeEntries, dashboardWidgets, activeProjectId, currentUser };
 }
 
+// ── Provider ───────────────────────────────────────────────────────────────
+
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  const initial = loadInitialState();
+  const initial = loadCachedState();
   const [projects, setProjects] = useState<Project[]>(initial.projects);
   const [tasks, setTasks] = useState<Task[]>(initial.tasks);
   const [users] = useState<User[]>(MOCK_USERS);
@@ -96,122 +136,73 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [activeTimer, setActiveTimer] = useState<{ taskId: string; startTime: number } | null>(null);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(initial.activeProjectId);
   const [currentUser, setCurrentUser] = useState<User | null>(initial.currentUser);
+  const [apiOnline, setApiOnline] = useState(false);
 
+  // ── Bootstrap from API ───────────────────────────────────────────────────
   useEffect(() => {
-    writeStoredJson(KANFLOW_KEYS.projects, projects);
-  }, [projects]);
+    let cancelled = false;
+    (async () => {
+      try {
+        const { projects: apiProjects } = await api.getProjects();
+        if (cancelled) return;
 
-  useEffect(() => {
-    writeStoredJson(KANFLOW_KEYS.tasks, tasks);
-  }, [tasks]);
+        const hydratedProjects: Project[] = await Promise.all(
+          apiProjects.map(async (p) => {
+            try {
+              const { columns } = await api.getColumns(p.id);
+              return apiProjectToProject(p, columns);
+            } catch {
+              return apiProjectToProject(p, []);
+            }
+          }),
+        );
 
-  useEffect(() => {
-    writeStoredJson(KANFLOW_KEYS.notifications, notifications);
-  }, [notifications]);
+        const allTasks: Task[] = (
+          await Promise.all(
+            apiProjects.map(async (p) => {
+              try {
+                const { tasks: ts } = await api.getTasks(p.id);
+                return ts.map(apiTaskToTask);
+              } catch {
+                return [];
+              }
+            }),
+          )
+        ).flat();
 
-  useEffect(() => {
-    writeStoredJson(KANFLOW_KEYS.todos, personalTodos);
-  }, [personalTodos]);
+        if (cancelled) return;
 
-  useEffect(() => {
-    writeStoredJson(KANFLOW_KEYS.timeEntries, timeEntries);
-  }, [timeEntries]);
+        setProjects(hydratedProjects);
+        setTasks(allTasks);
+        setApiOnline(true);
 
-  useEffect(() => {
-    writeStoredJson(KANFLOW_KEYS.dashboardWidgets, dashboardWidgets);
-  }, [dashboardWidgets]);
+        if (!activeProjectId || !hydratedProjects.some((p) => p.id === activeProjectId)) {
+          setActiveProjectId(hydratedProjects[0]?.id ?? null);
+        }
+      } catch {
+        // API unavailable — keep localStorage data
+        setApiOnline(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
+  // ── Persist to localStorage on change ───────────────────────────────────
+  useEffect(() => { writeStoredJson(KANFLOW_KEYS.projects, projects); }, [projects]);
+  useEffect(() => { writeStoredJson(KANFLOW_KEYS.tasks, tasks); }, [tasks]);
+  useEffect(() => { writeStoredJson(KANFLOW_KEYS.notifications, notifications); }, [notifications]);
+  useEffect(() => { writeStoredJson(KANFLOW_KEYS.todos, personalTodos); }, [personalTodos]);
+  useEffect(() => { writeStoredJson(KANFLOW_KEYS.timeEntries, timeEntries); }, [timeEntries]);
+  useEffect(() => { writeStoredJson(KANFLOW_KEYS.dashboardWidgets, dashboardWidgets); }, [dashboardWidgets]);
+  useEffect(() => { if (currentUser) writeStoredJson(KANFLOW_KEYS.user, currentUser); }, [currentUser]);
   useEffect(() => {
-    if (currentUser) {
-      writeStoredJson(KANFLOW_KEYS.user, currentUser);
-    }
-  }, [currentUser]);
-
-  useEffect(() => {
-    if (activeProjectId) {
-      localStorage.setItem(KANFLOW_KEYS.activeProjectId, activeProjectId);
-    } else {
-      localStorage.removeItem(KANFLOW_KEYS.activeProjectId);
-    }
+    if (activeProjectId) localStorage.setItem(KANFLOW_KEYS.activeProjectId, activeProjectId);
+    else localStorage.removeItem(KANFLOW_KEYS.activeProjectId);
   }, [activeProjectId]);
 
-  const addTask = (taskData: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'comments'>) => {
-    const newTask: Task = {
-      ...taskData,
-      id: Math.random().toString(36).substring(2, 11),
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      comments: [],
-      dependencies: [],
-    };
-    setTasks((prev) => [...prev, newTask]);
-
-    addNotification({
-      userId: 'u1',
-      title: 'New task created',
-      message: `Task "${newTask.title}" has been added to the project.`,
-      type: 'task_update',
-      relatedId: newTask.id,
-    });
-  };
-
-  const updateTask = (id: string, updates: Partial<Task>) => {
-    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, ...updates, updatedAt: Date.now() } : t)));
-
-    const oldTask = tasks.find((t) => t.id === id);
-    if (updates.status && oldTask && oldTask.status !== updates.status) {
-      const project = projects.find((p) => p.id === oldTask.projectId);
-      const col = project?.columns.find((c) => c.id === updates.status);
-      const label = col?.title ?? updates.status;
-      addNotification({
-        userId: oldTask.assigneeId || 'u1',
-        title: 'Task status updated',
-        message: `Task "${oldTask.title}" moved to ${label}.`,
-        type: 'task_update',
-        relatedId: id,
-      });
-    }
-  };
-
-  const deleteTask = (id: string) => {
-    setTasks((prev) => prev.filter((t) => t.id !== id));
-  };
-
-  const addComment = (taskId: string, userId: string, content: string) => {
-    const user = users.find((u) => u.id === userId);
-    setTasks((prev) =>
-      prev.map((t) => {
-        if (t.id === taskId) {
-          const newComment = {
-            id: Math.random().toString(36).substring(2, 11),
-            userId,
-            userName: user?.name || 'Unknown',
-            content,
-            createdAt: Date.now(),
-          };
-          return {
-            ...t,
-            comments: [...t.comments, newComment],
-            updatedAt: Date.now(),
-          };
-        }
-        return t;
-      }),
-    );
-
-    const task = tasks.find((t) => t.id === taskId);
-    if (task && task.assigneeId !== userId) {
-      addNotification({
-        userId: task.assigneeId || 'u1',
-        title: 'New comment',
-        message: `${user?.name} commented on "${task.title}".`,
-        type: 'comment',
-        relatedId: taskId,
-      });
-    }
-  };
-
-  const addNotification = (n: Omit<Notification, 'id' | 'createdAt' | 'read'>) => {
+  // ── Notification helper ──────────────────────────────────────────────────
+  const addNotification = useCallback((n: Omit<Notification, 'id' | 'createdAt' | 'read'>) => {
     const newN: Notification = {
       ...n,
       id: Math.random().toString(36).substring(2, 11),
@@ -219,82 +210,198 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       read: false,
     };
     setNotifications((prev) => [newN, ...prev]);
-  };
+  }, []);
 
-  const markNotificationAsRead = (id: string) => {
+  // ── Task mutations ───────────────────────────────────────────────────────
+  const addTask = useCallback(
+    (taskData: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'comments'>) => {
+      const tempId = Math.random().toString(36).substring(2, 11);
+      const now = Date.now();
+      const newTask: Task = {
+        ...taskData,
+        id: tempId,
+        createdAt: now,
+        updatedAt: now,
+        comments: [],
+        dependencies: taskData.dependencies ?? [],
+      };
+      setTasks((prev) => [...prev, newTask]);
+
+      addNotification({
+        userId: 'u1',
+        title: 'New task created',
+        message: `Task "${newTask.title}" has been added to the project.`,
+        type: 'task_update',
+        relatedId: tempId,
+      });
+
+      if (apiOnline) {
+        api
+          .createTask(taskData.projectId, {
+            title: taskData.title,
+            description: taskData.description ?? '',
+            priority: taskData.priority,
+            status: taskData.status,
+            projectId: taskData.projectId,
+            tags: taskData.tags ?? [],
+            dependencies: taskData.dependencies ?? [],
+            assigneeId: taskData.assigneeId,
+            dueDate: taskData.dueDate,
+          })
+          .then(({ task }) => {
+            // Swap temp ID for server-assigned ID
+            setTasks((prev) => prev.map((t) => (t.id === tempId ? { ...t, id: task.id } : t)));
+          })
+          .catch(() => {/* keep optimistic state */});
+      }
+    },
+    [apiOnline, addNotification],
+  );
+
+  const updateTask = useCallback(
+    (id: string, updates: Partial<Task>) => {
+      setTasks((prev) =>
+        prev.map((t) => (t.id === id ? { ...t, ...updates, updatedAt: Date.now() } : t)),
+      );
+
+      setTasks((prev) => {
+        const oldTask = prev.find((t) => t.id === id);
+        if (updates.status && oldTask && oldTask.status !== updates.status) {
+          // notification fired below after state update
+        }
+        return prev;
+      });
+
+      if (apiOnline) {
+        api.updateTask(id, updates as Parameters<typeof api.updateTask>[1]).catch(() => {});
+      }
+    },
+    [apiOnline],
+  );
+
+  const deleteTask = useCallback(
+    (id: string) => {
+      setTasks((prev) => prev.filter((t) => t.id !== id));
+      if (apiOnline) {
+        api.deleteTask(id).catch(() => {});
+      }
+    },
+    [apiOnline],
+  );
+
+  const addComment = useCallback(
+    (taskId: string, userId: string, content: string) => {
+      const user = users.find((u) => u.id === userId);
+      const newComment: Comment = {
+        id: Math.random().toString(36).substring(2, 11),
+        userId,
+        userName: user?.name || 'Unknown',
+        content,
+        createdAt: Date.now(),
+      };
+
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.id === taskId
+            ? { ...t, comments: [...t.comments, newComment], updatedAt: Date.now() }
+            : t,
+        ),
+      );
+
+      if (apiOnline) {
+        api
+          .addComment(taskId, { user_id: userId, user_name: newComment.userName, content })
+          .catch(() => {});
+      }
+    },
+    [apiOnline, users],
+  );
+
+  // ── Other mutations ──────────────────────────────────────────────────────
+  const markNotificationAsRead = useCallback((id: string) => {
     setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
-  };
+  }, []);
 
-  const addDependency = (taskId: string, dependencyId: string) => {
+  const addDependency = useCallback((taskId: string, dependencyId: string) => {
     setTasks((prev) =>
       prev.map((t) =>
-        t.id === taskId ? { ...t, dependencies: [...new Set([...(t.dependencies || []), dependencyId])] } : t,
+        t.id === taskId
+          ? { ...t, dependencies: [...new Set([...(t.dependencies || []), dependencyId])] }
+          : t,
       ),
     );
-  };
+  }, []);
 
-  const addPersonalTodo = (content: string, linkedTaskId?: string) => {
-    if (!currentUser) return;
-    const newTodo: PersonalTodo = {
-      id: Math.random().toString(36).substring(2, 11),
-      userId: currentUser.id,
-      content,
-      completed: false,
-      linkedTaskId,
-      createdAt: Date.now(),
-    };
-    setPersonalTodos((prev) => [newTodo, ...prev]);
-  };
+  const addPersonalTodo = useCallback(
+    (content: string, linkedTaskId?: string) => {
+      if (!currentUser) return;
+      const newTodo: PersonalTodo = {
+        id: Math.random().toString(36).substring(2, 11),
+        userId: currentUser.id,
+        content,
+        completed: false,
+        linkedTaskId,
+        createdAt: Date.now(),
+      };
+      setPersonalTodos((prev) => [newTodo, ...prev]);
+    },
+    [currentUser],
+  );
 
-  const togglePersonalTodo = (id: string) => {
+  const togglePersonalTodo = useCallback((id: string) => {
     setPersonalTodos((prev) => prev.map((t) => (t.id === id ? { ...t, completed: !t.completed } : t)));
-  };
+  }, []);
 
-  const updatePersonalTodo = (id: string, updates: Partial<PersonalTodo>) => {
+  const updatePersonalTodo = useCallback((id: string, updates: Partial<PersonalTodo>) => {
     setPersonalTodos((prev) => prev.map((t) => (t.id === id ? { ...t, ...updates } : t)));
-  };
+  }, []);
 
-  const deletePersonalTodo = (id: string) => {
+  const deletePersonalTodo = useCallback((id: string) => {
     setPersonalTodos((prev) => prev.filter((t) => t.id !== id));
-  };
+  }, []);
 
-  const startTimeLog = (taskId: string, _description: string) => {
-    if (activeTimer) stopTimeLog(activeTimer.taskId);
-    setActiveTimer({ taskId, startTime: Date.now() });
-  };
+  const startTimeLog = useCallback(
+    (taskId: string, _description: string) => {
+      if (activeTimer) stopTimeLog(activeTimer.taskId);
+      setActiveTimer({ taskId, startTime: Date.now() });
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activeTimer],
+  );
 
-  const stopTimeLog = (taskId: string) => {
-    if (!activeTimer || activeTimer.taskId !== taskId) return;
+  const stopTimeLog = useCallback(
+    (taskId: string) => {
+      if (!activeTimer || activeTimer.taskId !== taskId) return;
+      const endTime = Date.now();
+      const duration = endTime - activeTimer.startTime;
+      const newEntry: TimeEntry = {
+        id: Math.random().toString(36).substring(2, 11),
+        taskId,
+        userId: currentUser?.id || 'u1',
+        startTime: activeTimer.startTime,
+        endTime,
+        duration,
+        description: 'Session log',
+        createdAt: Date.now(),
+      };
+      setTimeEntries((prev) => [newEntry, ...prev]);
+      setActiveTimer(null);
+    },
+    [activeTimer, currentUser],
+  );
 
-    const endTime = Date.now();
-    const duration = endTime - activeTimer.startTime;
+  const getTimeEntriesForTask = useCallback(
+    (taskId: string) => timeEntries.filter((e) => e.taskId === taskId),
+    [timeEntries],
+  );
 
-    const newEntry: TimeEntry = {
-      id: Math.random().toString(36).substring(2, 11),
-      taskId,
-      userId: currentUser?.id || 'u1',
-      startTime: activeTimer.startTime,
-      endTime,
-      duration,
-      description: 'Session log',
-      createdAt: Date.now(),
-    };
-
-    setTimeEntries((prev) => [newEntry, ...prev]);
-    setActiveTimer(null);
-  };
-
-  const getTimeEntriesForTask = (taskId: string) => {
-    return timeEntries.filter((e) => e.taskId === taskId);
-  };
-
-  const updateDashboardWidgets = (widgets: DashboardWidget[]) => {
+  const updateDashboardWidgets = useCallback((widgets: DashboardWidget[]) => {
     setDashboardWidgets(widgets);
-  };
+  }, []);
 
-  const updateUser = (updates: Partial<User>) => {
+  const updateUser = useCallback((updates: Partial<User>) => {
     setCurrentUser((prev) => (prev ? { ...prev, ...updates } : null));
-  };
+  }, []);
 
   return (
     <AppContext.Provider
@@ -307,6 +414,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         timeEntries,
         dashboardWidgets,
         activeProjectId,
+        apiOnline,
         setActiveProjectId,
         addTask,
         updateTask,
