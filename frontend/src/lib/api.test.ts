@@ -66,10 +66,17 @@ describe('api client', () => {
 
   describe('deleteTask', () => {
     it('sends DELETE to /api/v1/tasks/:id and handles 204', async () => {
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-        status: 204, ok: true, statusText: 'No Content',
-        json: async () => { throw new Error('no body'); },
-      } as Response));
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({
+          status: 204,
+          ok: true,
+          statusText: 'No Content',
+          json: async () => {
+            throw new Error('no body');
+          },
+        } as unknown as Response),
+      );
 
       // 204 returns undefined without throwing
       const result = await api.deleteTask('t99');

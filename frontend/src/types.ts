@@ -67,6 +67,8 @@ export interface Project {
   columns: Column[];
   createdAt: number;
   ownerId: string;
+  /** User ids with access to this project (MISSION — project team). Always includes owner in UI. */
+  memberIds?: string[];
 }
 
 export interface Notification {

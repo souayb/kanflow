@@ -18,6 +18,7 @@ import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import ChatComponent from './ChatComponent';
 import ProfileDropdown from './ProfileDropdown';
+import ProjectsSidebarBlock from './ProjectsSidebarBlock';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -26,7 +27,7 @@ interface LayoutProps {
 }
 
 export default function Layout({ children, currentView, onViewChange }: LayoutProps) {
-  const { projects, activeProjectId, setActiveProjectId, notifications, markNotificationAsRead } = useApp();
+  const { projects, activeProjectId, notifications, markNotificationAsRead } = useApp();
   const [isNotificationsOpen, setIsNotificationsOpen] = React.useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(true);
 
@@ -87,32 +88,7 @@ export default function Layout({ children, currentView, onViewChange }: LayoutPr
         </div>
 
         <div className="mt-auto overflow-y-auto no-scrollbar">
-          <div className="px-6 md:px-8 py-6 border-t border-kf-divider-gray">
-            <div className="text-xs text-kf-secondary-text font-medium mb-3 tracking-tight">Projects</div>
-            <div className="space-y-1">
-              {projects.map((project) => (
-                <button
-                  key={project.id}
-                  type="button"
-                  onClick={() => {
-                    setActiveProjectId(project.id);
-                    onViewChange('kanban');
-                  }}
-                  className={cn(
-                    'w-full text-left px-3 py-2.5 rounded-[12px] transition-colors flex items-center justify-between text-sm font-medium',
-                    activeProjectId === project.id
-                      ? 'bg-kf-baby-blue text-kf-meta-blue border border-kf-meta-blue/15'
-                      : 'text-kf-slate hover:bg-kf-warm-gray border border-transparent',
-                  )}
-                >
-                  <span className="truncate">{project.name}</span>
-                  {activeProjectId === project.id && (
-                    <span className="w-2 h-2 rounded-full bg-kf-meta-blue shrink-0" aria-hidden />
-                  )}
-                </button>
-              ))}
-            </div>
-          </div>
+          <ProjectsSidebarBlock onSelectProject={() => onViewChange('kanban')} />
 
           <div className="px-6 md:px-8 py-6 border-t border-kf-divider-gray">
             <div className="text-xs text-kf-secondary-text font-medium mb-3 tracking-tight">Integrations</div>

@@ -1,5 +1,21 @@
-const OLLAMA_URL = (import.meta as any).env?.VITE_OLLAMA_URL ?? 'http://localhost:11434';
 const OLLAMA_MODEL = (import.meta as any).env?.VITE_OLLAMA_MODEL ?? 'llama3.2';
+
+/** Base URL without trailing slash. Dev defaults to same-origin `/ollama` (Vite + nginx proxy). */
+function ollamaBase(): string {
+  const raw = (import.meta as any).env?.VITE_OLLAMA_URL as string | undefined;
+  if (raw != null && String(raw).trim() !== '') {
+    return String(raw).trim().replace(/\/$/, '');
+  }
+  if ((import.meta as any).env?.DEV) {
+    return '/ollama';
+  }
+  return 'http://127.0.0.1:11434';
+}
+
+function ollamaChatUrl(): string {
+  const base = ollamaBase();
+  return `${base}/api/chat`;
+}
 
 interface OllamaMessage {
   role: 'system' | 'user' | 'assistant';
@@ -7,7 +23,7 @@ interface OllamaMessage {
 }
 
 async function ollamaChat(messages: OllamaMessage[], jsonMode = false): Promise<string> {
-  const response = await fetch(`${OLLAMA_URL}/api/chat`, {
+  const response = await fetch(ollamaChatUrl(), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -17,28 +33,117 @@ async function ollamaChat(messages: OllamaMessage[], jsonMode = false): Promise<
       ...(jsonMode && { format: 'json' }),
     }),
   });
-  if (!response.ok) throw new Error(`Ollama error ${response.status}: ${response.statusText}`);
-  const data = await response.json();
+  const raw = await response.text();
+  if (!response.ok) {
+    let detail = response.statusText;
+    try {
+      const j = JSON.parse(raw) as { error?: string };
+      if (j?.error) detail = j.error;
+    } catch {
+      if (raw) detail = raw.slice(0, 200);
+    }
+    if (response.status === 404) {
+      throw new Error(
+        `Ollama model or route (${OLLAMA_MODEL}): ${detail}. If the model is missing, run \`ollama pull ${OLLAMA_MODEL}\` (or wait for the ollama-pull service in Docker Compose).`,
+      );
+    }
+    throw new Error(`Ollama error ${response.status}: ${detail}`);
+  }
+  const data = JSON.parse(raw) as { message?: { content?: string } };
   const content = data.message?.content;
   if (!content) throw new Error('Empty response from Ollama');
   return content;
 }
 
-export async function enhanceTask(title: string, description: string) {
-  const content = await ollamaChat([
-    {
-      role: 'system',
-      content:
-        'You are a high-performance task optimizer. Always respond with valid JSON only — no markdown fences, no prose outside the JSON object.',
-    },
-    {
-      role: 'user',
-      content: `Enhance this task for maximum clarity and actionability.
+export interface TaskEnhancementResult {
+  enhancedTitle: string;
+  enhancedDescription: string;
+  subtasks: string[];
+  potentialRisks: string[];
+  suggestedPriority: 'low' | 'medium' | 'high';
+  definitionOfDone: string;
+  aiThinking: string;
+}
+
+function extractJsonObject(text: string): string {
+  let t = text.trim();
+  t = t.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
+  const start = t.indexOf('{');
+  const end = t.lastIndexOf('}');
+  if (start === -1 || end === -1 || end <= start) {
+    throw new Error(`Model did not return a JSON object. Raw (truncated): ${text.slice(0, 400)}`);
+  }
+  return t.slice(start, end + 1);
+}
+
+function firstStr(raw: Record<string, unknown>, ...keys: string[]): string {
+  for (const k of keys) {
+    const v = raw[k];
+    if (typeof v === 'string' && v.trim()) return v.trim();
+  }
+  return '';
+}
+
+function firstArr(raw: Record<string, unknown>, ...keys: string[]): string[] {
+  for (const k of keys) {
+    const v = raw[k];
+    if (Array.isArray(v)) return v.map((x) => String(x).trim()).filter(Boolean);
+  }
+  return [];
+}
+
+function normalizeEnhancePayload(
+  raw: Record<string, unknown>,
+  fallback: { title: string; description: string },
+): TaskEnhancementResult {
+  const pri = firstStr(raw, 'suggestedPriority', 'suggested_priority', 'priority').toLowerCase();
+  const suggestedPriority: 'low' | 'medium' | 'high' =
+    pri === 'low' || pri === 'high' ? pri : 'medium';
+
+  const enhancedTitle =
+    firstStr(raw, 'enhancedTitle', 'enhanced_title', 'title', 'smartTitle', 'smart_title') ||
+    fallback.title;
+  const enhancedDescription =
+    firstStr(
+      raw,
+      'enhancedDescription',
+      'enhanced_description',
+      'description',
+      'smartDescription',
+      'smart_description',
+    ) || fallback.description;
+
+  return {
+    enhancedTitle,
+    enhancedDescription,
+    subtasks: firstArr(raw, 'subtasks', 'sub_tasks'),
+    potentialRisks: firstArr(raw, 'potentialRisks', 'potential_risks', 'risks'),
+    suggestedPriority,
+    definitionOfDone:
+      firstStr(raw, 'definitionOfDone', 'definition_of_done', 'dod') ||
+      'Criteria to be agreed with the team.',
+    aiThinking:
+      firstStr(raw, 'aiThinking', 'ai_thinking', 'thinking', 'rationale', 'logic') ||
+      'See enhanced title and description above.',
+  };
+}
+
+export async function enhanceTask(title: string, description: string): Promise<TaskEnhancementResult> {
+  const content = await ollamaChat(
+    [
+      {
+        role: 'system',
+        content:
+          'You are a high-performance task optimizer. Reply with one JSON object only. No markdown code fences, no text before or after the JSON.',
+      },
+      {
+        role: 'user',
+        content: `Enhance this task for maximum clarity and actionability.
 
 Task Title: ${title}
 Task Description: ${description}
 
-Return a single JSON object with exactly these keys:
+Return exactly one JSON object with these keys (use strings and arrays of strings; suggestedPriority must be exactly "low", "medium", or "high"):
 {
   "enhancedTitle": "string",
   "enhancedDescription": "string",
@@ -48,16 +153,19 @@ Return a single JSON object with exactly these keys:
   "definitionOfDone": "string",
   "aiThinking": "string"
 }`,
-    },
-  ], true);
+      },
+    ],
+    true,
+  );
 
+  let parsed: Record<string, unknown>;
   try {
-    return JSON.parse(content);
+    const jsonStr = extractJsonObject(content);
+    parsed = JSON.parse(jsonStr) as Record<string, unknown>;
   } catch {
-    // Strip possible markdown fences if model ignores the instruction
-    const cleaned = content.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
-    return JSON.parse(cleaned);
+    parsed = {};
   }
+  return normalizeEnhancePayload(parsed, { title, description });
 }
 
 export async function refineTaskToSMART(title: string, description: string) {

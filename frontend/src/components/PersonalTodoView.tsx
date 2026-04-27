@@ -14,12 +14,22 @@ import {
   Zap,
 } from 'lucide-react';
 import { useApp } from '../AppContext';
+import { MOCK_USER_ALEX } from '../constants';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export default function PersonalTodoView() {
-  const { personalTodos, addPersonalTodo, togglePersonalTodo, updatePersonalTodo, deletePersonalTodo, tasks, projects, activeProjectId } =
-    useApp();
+  const {
+    personalTodos,
+    addPersonalTodo,
+    togglePersonalTodo,
+    updatePersonalTodo,
+    deletePersonalTodo,
+    tasks,
+    projects,
+    activeProjectId,
+    currentUser,
+  } = useApp();
   const [newTodo, setNewTodo] = useState('');
   const [viewMode, setViewMode] = useState<'list' | 'matrix'>('matrix');
 
@@ -44,8 +54,12 @@ export default function PersonalTodoView() {
   const quadrant3 = personalTodos.filter((t) => t.quadrant === 3);
   const quadrant4 = personalTodos.filter((t) => t.quadrant === 4);
 
+  const selfId = currentUser?.id ?? MOCK_USER_ALEX;
   const suggestedTasks = tasks.filter(
-    (t) => t.assigneeId === 'u1' && (doneColumnId == null || t.status !== doneColumnId),
+    (t) =>
+      (!activeProjectId || t.projectId === activeProjectId) &&
+      t.assigneeId === selfId &&
+      (doneColumnId == null || t.status !== doneColumnId),
   );
 
   return (

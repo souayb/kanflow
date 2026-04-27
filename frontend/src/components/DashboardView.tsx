@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useApp } from '../AppContext';
 import {
   BarChart,
@@ -27,13 +27,91 @@ import {
   Sparkles,
   Zap,
   Target,
+  Loader2,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import Avatar from './Avatar';
 import { motion, AnimatePresence } from 'framer-motion';
 import DashboardCustomizer from './DashboardCustomizer';
+import { summarizeProjectProgress } from '../lib/ai';
 
 const CHART_PALETTE = ['#5D6C7B', '#F7B928', '#0064E0', '#31A24C', '#A121CE'];
+
+function KanflowAiInsightCard() {
+  const { tasks, projects, activeProjectId } = useApp();
+  const [insight, setInsight] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    if (!activeProjectId) {
+      setInsight('Select a project to get AI insights for that workspace.');
+      setLoading(false);
+      return;
+    }
+    const project = projects.find((p) => p.id === activeProjectId);
+    const projectTasks = tasks.filter((t) => t.projectId === activeProjectId);
+    setLoading(true);
+    try {
+      const summary = await summarizeProjectProgress({
+        project: project ? { name: project.name, description: project.description } : null,
+        columns: project?.columns ?? [],
+        tasks: projectTasks.map((t) => ({
+          title: t.title,
+          status: t.status,
+          priority: t.priority,
+        })),
+      });
+      setInsight(summary.trim() || 'No summary returned.');
+    } catch {
+      setInsight(
+        'Could not reach the AI model. Start Ollama (`ollama serve`) or set VITE_OLLAMA_URL. With Docker Compose, the frontend proxies `/ollama` to the Ollama service.',
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [activeProjectId, projects, tasks]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  return (
+    <motion.div
+      layout
+      initial={{ opacity: 0, scale: 0.98 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.98 }}
+      className="lg:col-span-1 bg-kf-meta-blue p-8 rounded-[24px] shadow-lg relative overflow-hidden group text-kf-white"
+    >
+      <div className="absolute top-0 right-0 w-40 h-40 bg-kf-meta-blue-light/30 rounded-full blur-3xl -translate-y-10 translate-x-10 group-hover:scale-110 transition-transform duration-700" />
+      <div className="relative z-10">
+        <div className="flex items-center gap-3 mb-5">
+          <div className="p-2 bg-white/15 rounded-[12px] backdrop-blur-sm">
+            <Sparkles size={20} className="text-kf-white" />
+          </div>
+          <h3 className="font-medium text-sm tracking-tight">Kanflow AI insight</h3>
+        </div>
+        {loading ? (
+          <div className="flex items-center gap-3 text-sm text-white/90 py-4">
+            <Loader2 className="animate-spin shrink-0" size={20} />
+            Analyzing project…
+          </div>
+        ) : (
+          <p className="text-sm text-white/90 leading-relaxed mb-6 whitespace-pre-wrap">{insight}</p>
+        )}
+        <button
+          type="button"
+          disabled={loading}
+          onClick={() => void load()}
+          className="w-full py-3 kf-btn-primary !bg-kf-white !text-kf-meta-blue hover:!bg-kf-baby-blue disabled:opacity-60"
+        >
+          <Zap size={14} className="inline mr-2 align-middle" />
+          Refresh insight
+        </button>
+      </div>
+    </motion.div>
+  );
+}
 
 export default function DashboardView() {
   const { tasks, projects, activeProjectId, dashboardWidgets } = useApp();
@@ -289,36 +367,7 @@ export default function DashboardView() {
                 </motion.div>
               )}
 
-              {widget.type === 'ai_insights' && (
-                <motion.div
-                  layout
-                  initial={{ opacity: 0, scale: 0.98 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.98 }}
-                  className="lg:col-span-1 bg-kf-meta-blue p-8 rounded-[24px] shadow-lg relative overflow-hidden group text-kf-white"
-                >
-                  <div className="absolute top-0 right-0 w-40 h-40 bg-kf-meta-blue-light/30 rounded-full blur-3xl -translate-y-10 translate-x-10 group-hover:scale-110 transition-transform duration-700" />
-                  <div className="relative z-10">
-                    <div className="flex items-center gap-3 mb-5">
-                      <div className="p-2 bg-white/15 rounded-[12px] backdrop-blur-sm">
-                        <Sparkles size={20} className="text-kf-white" />
-                      </div>
-                      <h3 className="font-medium text-sm tracking-tight">Kanflow AI insight</h3>
-                    </div>
-                    <p className="text-sm text-white/90 leading-relaxed mb-6">
-                      Throughput is strong mid-week. Consider grooming high-priority items in your first column to keep
-                      flow steady.
-                    </p>
-                    <button
-                      type="button"
-                      className="w-full py-3 kf-btn-primary !bg-kf-white !text-kf-meta-blue hover:!bg-kf-baby-blue"
-                    >
-                      <Zap size={14} />
-                      Review suggestions
-                    </button>
-                  </div>
-                </motion.div>
-              )}
+              {widget.type === 'ai_insights' && <KanflowAiInsightCard />}
 
               {widget.type === 'activity' && (
                 <motion.div

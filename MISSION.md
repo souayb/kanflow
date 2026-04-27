@@ -29,7 +29,7 @@
 | Animation | Motion (Framer Motion v12) |
 | Charts | Recharts |
 | Backend | Rust (`kanflow-server`): PostgreSQL (structured domain) + MongoDB (chat, config, blobs) |
-| AI | Google Gemini (`@google/genai`) |
+| AI | Ollama — `frontend/src/lib/ai.ts` (`VITE_OLLAMA_URL`, `VITE_OLLAMA_MODEL`); dev uses `/ollama` (Vite proxy); Docker frontend uses `/ollama` (nginx → Ollama service) |
 | Persistence | localStorage; API sync optional |
 | Design System | Meta-inspired (see DESIGN.md) |
 
@@ -63,6 +63,7 @@ Project {
   columns: Column[]   // embedded, ordered
   createdAt: number
   ownerId: string
+  memberIds?: string[] // project team (includes owner in UI; persisted client-side until API supports it)
 }
 ```
 
@@ -188,7 +189,8 @@ ChatMessage {
 ### 5.1 Project Management (was Board Management)
 
 * Create project
-* Rename project
+* Add and remove **project team** members (sidebar; persisted with the project in localStorage; API field planned)
+* Rename project (context `updateProject`; wire inline UI as needed)
 * Delete project (with confirmation)
 * Switch active project
 
@@ -353,10 +355,11 @@ AppContextType {
 * Run Postgres + Mongo locally: `docker compose up -d` (see repo root `docker-compose.yml`).
 * Environment: copy `.env.example` — `DATABASE_URL`, `MONGO_URI`, `MONGO_DB`, `KANFLOW_PORT`.
 * Health: `GET /health` — used in automated contract tests without live databases.
+* Postgres migrations: `20260427100001_project_members.sql` (`project_members` join table), `20260427120000_seed_demo.sql` (full demo dataset: users, projects, columns, five tasks, comment with fixed id, task dependency, time entry, team rows), and `20260427135000_seed_demo_backfill.sql` (idempotent gap-fill for DBs that ran an older seed). All UUIDs and timestamps align with `frontend/src/constants.ts`.
 
 ### AI
 
-* Client: `frontend/src/lib/ai.ts` — Ollama (`VITE_OLLAMA_URL`, `VITE_OLLAMA_MODEL`); see `frontend/.env.example`
+* Client: `frontend/src/lib/ai.ts` — Ollama (`VITE_OLLAMA_URL`, `VITE_OLLAMA_MODEL`); see `frontend/.env.example`. Dashboard **Kanflow AI insight** and task/chat flows call this client.
 
 ---
 

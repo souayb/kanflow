@@ -16,7 +16,7 @@ import {
 import { useApp } from '../AppContext';
 import { cn, formatDate, getPriorityColor } from '../lib/utils';
 import Avatar from './Avatar';
-import { enhanceTask } from '../lib/ai';
+import { enhanceTask, type TaskEnhancementResult } from '../lib/ai';
 import ReactMarkdown from 'react-markdown';
 
 interface TaskModalProps {
@@ -29,7 +29,8 @@ export default function TaskModal({ taskId, onClose }: TaskModalProps) {
   const task = tasks.find((t) => t.id === taskId);
   const [commentText, setCommentText] = useState('');
   const [isRefining, setIsRefining] = useState(false);
-  const [aiResult, setAiResult] = useState<any>(null);
+  const [aiResult, setAiResult] = useState<TaskEnhancementResult | null>(null);
+  const [aiError, setAiError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'details' | 'comments' | 'ai' | 'dependencies'>('details');
 
   if (!task) return null;
@@ -55,27 +56,62 @@ export default function TaskModal({ taskId, onClose }: TaskModalProps) {
 
   const handleEnhance = async () => {
     setIsRefining(true);
+    setAiError(null);
     setActiveTab('ai');
     try {
       const result = await enhanceTask(task.title, task.description);
       setAiResult(result);
     } catch (error) {
       console.error(error);
+      setAiResult(null);
+      setAiError(error instanceof Error ? error.message : 'AI refine failed.');
     } finally {
       setIsRefining(false);
     }
   };
 
+  const formatAiBlockForDescription = (r: TaskEnhancementResult): string => {
+    const lines: string[] = [
+      '## Kanflow AI — refined output',
+      '',
+      `**Suggested title:** ${r.enhancedTitle}`,
+      '',
+      r.enhancedDescription,
+      '',
+    ];
+    if (r.subtasks.length) {
+      lines.push('**Subtasks**', ...r.subtasks.map((s) => `- ${s}`), '');
+    }
+    if (r.potentialRisks.length) {
+      lines.push('**Risks**', ...r.potentialRisks.map((x) => `- ${x}`), '');
+    }
+    lines.push('**Definition of done**', r.definitionOfDone, '', '**Rationale**', r.aiThinking);
+    return lines.join('\n');
+  };
+
+  const appendAiToDetails = () => {
+    if (!aiResult) return;
+    const block = formatAiBlockForDescription(aiResult);
+    const next = task.description.trim() ? `${task.description.trim()}\n\n---\n\n${block}` : block;
+    updateTask(taskId, { description: next });
+    setActiveTab('details');
+  };
+
   const applyAIChange = () => {
     if (!aiResult) return;
+    const thinking =
+      [aiResult.aiThinking, aiResult.definitionOfDone ? `### Definition of done\n${aiResult.definitionOfDone}` : '']
+        .filter(Boolean)
+        .join('\n\n');
     updateTask(taskId, {
       title: aiResult.enhancedTitle,
       description: aiResult.enhancedDescription,
       priority: aiResult.suggestedPriority,
       aiSuggested: true,
-      aiThinking: aiResult.aiThinking + "\n\n### Definition of Done\n" + aiResult.definitionOfDone
+      aiThinking: thinking,
     });
     setAiResult(null);
+    setAiError(null);
   };
 
   const toggleDependency = (depId: string) => {
@@ -139,9 +175,12 @@ export default function TaskModal({ taskId, onClose }: TaskModalProps) {
                 <span className="text-kf-slate block">Assignee</span>
                 <select
                   className="kf-input text-sm font-medium py-2 max-w-[200px]"
-                  value={task.assigneeId}
-                  onChange={(e) => updateTask(taskId, { assigneeId: e.target.value })}
+                  value={task.assigneeId ?? ''}
+                  onChange={(e) =>
+                    updateTask(taskId, { assigneeId: e.target.value ? e.target.value : undefined })
+                  }
                 >
+                  <option value="">Unassigned</option>
                   {users.map((user) => (
                     <option key={user.id} value={user.id}>
                       {user.name}
@@ -152,17 +191,58 @@ export default function TaskModal({ taskId, onClose }: TaskModalProps) {
 
               <div className="space-y-2">
                 <span className="text-kf-slate block">Due date</span>
-                <div className="flex items-center gap-2 py-2 px-3 kf-card text-sm text-kf-charcoal">
-                  <Calendar size={14} className="text-kf-meta-blue" strokeWidth={1.75} />
-                  {task.dueDate ? formatDate(task.dueDate) : 'None'}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Calendar size={14} className="text-kf-meta-blue shrink-0" strokeWidth={1.75} />
+                    <input
+                      type="date"
+                      className="kf-input text-sm font-medium py-2 min-w-[11rem]"
+                      value={
+                        task.dueDate
+                          ? new Date(task.dueDate).toISOString().slice(0, 10)
+                          : ''
+                      }
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (!v) {
+                          updateTask(taskId, { dueDate: undefined });
+                          return;
+                        }
+                        const ms = Date.parse(`${v}T12:00:00.000Z`);
+                        if (!Number.isNaN(ms)) updateTask(taskId, { dueDate: ms });
+                      }}
+                    />
+                  </div>
+                  {task.dueDate != null && (
+                    <button
+                      type="button"
+                      className="text-[10px] font-semibold uppercase tracking-wide text-kf-slate hover:text-kf-meta-blue"
+                      onClick={() => updateTask(taskId, { dueDate: undefined })}
+                    >
+                      Clear
+                    </button>
+                  )}
                 </div>
               </div>
 
               <div className="space-y-2">
                 <span className="text-kf-slate block">Priority</span>
-                <span className={cn('inline-block px-3 py-1.5 rounded-full text-xs font-semibold capitalize', getPriorityColor(task.priority))}>
-                  {task.priority}
-                </span>
+                <select
+                  className={cn(
+                    'kf-input text-sm font-semibold capitalize py-2 min-w-[8rem]',
+                    getPriorityColor(task.priority),
+                  )}
+                  value={task.priority}
+                  onChange={(e) =>
+                    updateTask(taskId, {
+                      priority: e.target.value as 'low' | 'medium' | 'high',
+                    })
+                  }
+                >
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                </select>
               </div>
 
               <div className="space-y-2">
@@ -344,6 +424,11 @@ export default function TaskModal({ taskId, onClose }: TaskModalProps) {
 
             {activeTab === 'ai' && (
               <div className="space-y-6">
+                {aiError && (
+                  <div className="rounded-2xl border border-kf-error/30 bg-kf-error/10 px-4 py-3 text-sm text-kf-charcoal">
+                    {aiError}
+                  </div>
+                )}
                 {isRefining ? (
                   <div className="flex flex-col items-center justify-center py-20 gap-6">
                     <div className="relative">
@@ -356,72 +441,91 @@ export default function TaskModal({ taskId, onClose }: TaskModalProps) {
                   <div className="space-y-6">
                      <div className="bg-kf-warm-gray p-8 rounded-3xl border border-kf-meta-blue/20 shadow-2xl relative overflow-hidden group">
                         <div className="absolute top-0 right-0 w-32 h-32 bg-kf-meta-blue opacity-[0.06] rounded-full blur-3xl -translate-y-12 translate-x-12 group-hover:scale-150 transition-transform duration-1000" />
-                        <div className="flex items-center justify-between mb-8">
+                        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
                           <div className="flex items-center gap-3 text-kf-meta-blue font-black text-xs uppercase tracking-widest">
                             <Sparkles size={20} className="animate-pulse" />
                             AI suggestions
                           </div>
-                          <div className="flex items-center gap-3">
+                          <div className="flex flex-wrap items-center gap-2">
                             <button 
+                              type="button"
                               onClick={() => {
                                 updateTask(taskId, { description: aiResult.enhancedDescription });
                                 setActiveTab('details');
                               }}
                               className="px-4 py-2 border border-kf-divider-gray hover:border-kf-meta-blue/40 text-kf-slate hover:text-kf-meta-blue text-[10px] font-black uppercase tracking-widest rounded-xl transition-all"
                             >
-                              Apply to Description
+                              Replace description
                             </button>
                             <button 
+                              type="button"
+                              onClick={appendAiToDetails}
+                              className="px-4 py-2 border border-kf-meta-blue/30 bg-kf-baby-blue/40 hover:bg-kf-baby-blue/70 text-kf-meta-blue text-[10px] font-black uppercase tracking-widest rounded-xl transition-all"
+                            >
+                              Append to Details
+                            </button>
+                            <button 
+                              type="button"
                               onClick={applyAIChange}
                               className="px-4 py-2 kf-btn-primary !rounded-xl text-[10px] font-semibold uppercase tracking-wide !shadow-md"
                             >
-                              Sync Full Logic
+                              Apply all to task
                             </button>
                           </div>
                         </div>
                         
                         <div className="space-y-8">
                           <div>
-                            <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-kf-slate mb-2">Enhanced Payload</h4>
-                            <div className="text-lg font-black text-white mb-2">{aiResult.enhancedTitle}</div>
-                            <p className="text-sm text-kf-slate leading-relaxed">{aiResult.enhancedDescription}</p>
+                            <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-kf-slate mb-2">Enhanced title</h4>
+                            <div className="text-lg font-semibold text-kf-charcoal mb-2">{aiResult.enhancedTitle}</div>
+                            <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-kf-slate mb-2 mt-4">Enhanced description</h4>
+                            <p className="text-sm text-kf-charcoal leading-relaxed whitespace-pre-wrap">{aiResult.enhancedDescription}</p>
+                            <p className="text-[10px] text-kf-secondary-text mt-2">Suggested priority: <span className="font-semibold capitalize text-kf-charcoal">{aiResult.suggestedPriority}</span></p>
                           </div>
 
-                          <div className="grid grid-cols-2 gap-6">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                             <div>
-                              <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-kf-slate mb-3">Sub-Clusters</h4>
+                              <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-kf-slate mb-3">Subtasks</h4>
                               <div className="space-y-2">
-                                {aiResult.subtasks?.map((s: string, i: number) => (
-                                  <div key={i} className="text-[10px] font-bold text-kf-slate flex items-center gap-2 uppercase tracking-wide">
-                                    <div className="w-1 h-1 bg-kf-meta-blue rounded-full" />
+                                {aiResult.subtasks.length ? (
+                                  aiResult.subtasks.map((s, i) => (
+                                  <div key={i} className="text-xs text-kf-charcoal flex items-center gap-2">
+                                    <div className="w-1 h-1 bg-kf-meta-blue rounded-full shrink-0" />
                                     {s}
                                   </div>
-                                ))}
+                                ))
+                                ) : (
+                                  <span className="text-xs text-kf-secondary-text">None suggested</span>
+                                )}
                               </div>
                             </div>
                             <div>
-                              <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-rose-500/60 mb-3">Threat Vector</h4>
+                              <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-rose-600/80 mb-3">Risks</h4>
                               <div className="space-y-2">
-                                {aiResult.potentialRisks?.map((r: string, i: number) => (
-                                  <div key={i} className="text-[10px] font-bold text-rose-400/80 flex items-center gap-2 uppercase tracking-wide">
-                                    <div className="w-1 h-1 bg-rose-500 rounded-full" />
+                                {aiResult.potentialRisks.length ? (
+                                  aiResult.potentialRisks.map((r, i) => (
+                                  <div key={i} className="text-xs text-kf-charcoal flex items-center gap-2">
+                                    <div className="w-1 h-1 bg-rose-500 rounded-full shrink-0" />
                                     {r}
                                   </div>
-                                ))}
+                                ))
+                                ) : (
+                                  <span className="text-xs text-kf-secondary-text">None suggested</span>
+                                )}
                               </div>
                             </div>
                           </div>
 
                           <div>
-                             <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-500/60 mb-3">Definition of Done</h4>
-                             <div className="p-4 bg-kf-soft-gray border border-kf-divider-gray rounded-2xl text-[11px] text-emerald-400/80 font-medium italic leading-relaxed">
+                             <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-kf-slate mb-3">Definition of done</h4>
+                             <div className="p-4 bg-kf-soft-gray border border-kf-divider-gray rounded-2xl text-sm text-kf-charcoal leading-relaxed">
                                 {aiResult.definitionOfDone}
                              </div>
                           </div>
 
                           <div className="pt-6 border-t border-kf-divider-gray">
-                             <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-kf-slate mb-2">Internal Rationale</h4>
-                             <p className="text-[11px] text-kf-slate italic leading-relaxed">
+                             <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-kf-slate mb-2">Rationale</h4>
+                             <p className="text-sm text-kf-charcoal leading-relaxed whitespace-pre-wrap">
                                {aiResult.aiThinking}
                              </p>
                           </div>

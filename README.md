@@ -33,7 +33,7 @@ A local-first Kanban task management application. Manage projects, columns, and 
 | Frontend | React 19, TypeScript, Vite 6, TailwindCSS v4 |
 | Backend | Rust (Axum), sqlx + PostgreSQL, MongoDB |
 | AI | Ollama (local, no API key needed) |
-| Persistence | localStorage (tasks + per-project chat), Postgres + Mongo (API) |
+| Persistence | localStorage (projects with team metadata, tasks, per-project chat), Postgres + Mongo (API) |
 | Containerization | Docker Compose |
 
 ---
@@ -160,10 +160,15 @@ npm run dev
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `VITE_OLLAMA_URL` | `http://localhost:11434` | Ollama server URL (browser-accessible) |
+| `VITE_OLLAMA_URL` | *(unset in dev)* | When unset, `npm run dev` uses same-origin `/ollama` (Vite proxy). Set `http://localhost:11434` only if you want the browser to call Ollama directly. |
 | `VITE_OLLAMA_MODEL` | `llama3.2` | Model name for all AI features |
 
-> **Note:** In Docker Compose the frontend bundle is built with `VITE_OLLAMA_URL=http://localhost:11434` (the host-exposed port) because the browser calls Ollama directly — not through the internal Docker network.
+> **Note:** The Compose frontend image is built with `VITE_OLLAMA_URL=/ollama`. Nginx proxies `/ollama` to the `ollama` service so the browser does not need Docker host networking for the LLM.
+
+### Ollama troubleshooting (Docker)
+
+- **`ollama` unhealthy / `ollama-pull` never runs:** The published `ollama/ollama` image does not include `curl`. This repo’s healthcheck uses `ollama list` against the API instead. If the service was unhealthy before, run `docker compose up --build` after pulling the latest `docker-compose.yml`.
+- **`POST /api/chat` returns 404:** Ollama often uses **404 for “model not found”**. Ensure `ollama-pull` completed (`docker compose logs ollama-pull`) or run `docker compose run --rm ollama-pull` / `ollama pull llama3.2` on the host. Match `VITE_OLLAMA_MODEL` / `OLLAMA_MODEL` to a pulled tag.
 
 ---
 

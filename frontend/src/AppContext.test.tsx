@@ -6,6 +6,12 @@ import React from 'react';
 import { render, screen, act } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppProvider, useApp } from './AppContext';
+import {
+  MOCK_COL_LAUNCH_DONE,
+  MOCK_COL_LAUNCH_TODO,
+  MOCK_PROJECT_LAUNCH,
+  MOCK_USER_ALEX,
+} from './constants';
 
 // ── Mock localStorage ──────────────────────────────────────────────────────
 function mockLocalStorage() {
@@ -69,9 +75,9 @@ describe('AppContext', () => {
         ctx.addTask({
           title: 'New test task',
           description: 'desc',
-          status: 'c1',
+          status: MOCK_COL_LAUNCH_TODO,
           priority: 'medium',
-          projectId: 'p1',
+          projectId: MOCK_PROJECT_LAUNCH,
           tags: [],
           dependencies: [],
         });
@@ -80,7 +86,7 @@ describe('AppContext', () => {
       expect(ctx.tasks).toHaveLength(initialCount + 1);
       const added = ctx.tasks.find((t) => t.title === 'New test task');
       expect(added).toBeDefined();
-      expect(added!.status).toBe('c1');
+      expect(added!.status).toBe(MOCK_COL_LAUNCH_TODO);
       expect(added!.comments).toEqual([]);
     });
 
@@ -89,8 +95,24 @@ describe('AppContext', () => {
       renderWithContext((c) => { ctx = c; return null; });
 
       await act(async () => {
-        ctx.addTask({ title: 'Task A', description: '', status: 'c1', priority: 'low', projectId: 'p1', tags: [], dependencies: [] });
-        ctx.addTask({ title: 'Task B', description: '', status: 'c1', priority: 'low', projectId: 'p1', tags: [], dependencies: [] });
+        ctx.addTask({
+          title: 'Task A',
+          description: '',
+          status: MOCK_COL_LAUNCH_TODO,
+          priority: 'low',
+          projectId: MOCK_PROJECT_LAUNCH,
+          tags: [],
+          dependencies: [],
+        });
+        ctx.addTask({
+          title: 'Task B',
+          description: '',
+          status: MOCK_COL_LAUNCH_TODO,
+          priority: 'low',
+          projectId: MOCK_PROJECT_LAUNCH,
+          tags: [],
+          dependencies: [],
+        });
       });
 
       const ids = ctx.tasks.map((t) => t.id);
@@ -105,7 +127,15 @@ describe('AppContext', () => {
       const before = ctx.notifications.length;
 
       await act(async () => {
-        ctx.addTask({ title: 'Notify me', description: '', status: 'c1', priority: 'high', projectId: 'p1', tags: [], dependencies: [] });
+        ctx.addTask({
+          title: 'Notify me',
+          description: '',
+          status: MOCK_COL_LAUNCH_TODO,
+          priority: 'high',
+          projectId: MOCK_PROJECT_LAUNCH,
+          tags: [],
+          dependencies: [],
+        });
       });
 
       expect(ctx.notifications.length).toBe(before + 1);
@@ -137,11 +167,11 @@ describe('AppContext', () => {
       if (!taskId) return;
 
       await act(async () => {
-        ctx.updateTask(taskId, { status: 'c4' });
+        ctx.updateTask(taskId, { status: MOCK_COL_LAUNCH_DONE });
       });
 
       const updated = ctx.tasks.find((t) => t.id === taskId);
-      expect(updated!.status).toBe('c4');
+      expect(updated!.status).toBe(MOCK_COL_LAUNCH_DONE);
     });
 
     it('updates updatedAt timestamp', async () => {
@@ -172,7 +202,15 @@ describe('AppContext', () => {
 
       // Add a task first so we have one to delete
       await act(async () => {
-        ctx.addTask({ title: 'To delete', description: '', status: 'c1', priority: 'low', projectId: 'p1', tags: [], dependencies: [] });
+        ctx.addTask({
+          title: 'To delete',
+          description: '',
+          status: MOCK_COL_LAUNCH_TODO,
+          priority: 'low',
+          projectId: MOCK_PROJECT_LAUNCH,
+          tags: [],
+          dependencies: [],
+        });
       });
 
       const taskId = ctx.tasks.find((t) => t.title === 'To delete')!.id;
@@ -211,13 +249,13 @@ describe('AppContext', () => {
       const before = ctx.tasks.find((t) => t.id === taskId)!.comments.length;
 
       await act(async () => {
-        ctx.addComment(taskId, 'u1', 'Test comment content');
+        ctx.addComment(taskId, MOCK_USER_ALEX, 'Test comment content');
       });
 
       const task = ctx.tasks.find((t) => t.id === taskId)!;
       expect(task.comments).toHaveLength(before + 1);
       expect(task.comments[task.comments.length - 1].content).toBe('Test comment content');
-      expect(task.comments[task.comments.length - 1].userId).toBe('u1');
+      expect(task.comments[task.comments.length - 1].userId).toBe(MOCK_USER_ALEX);
     });
 
     it('sets the correct userName from users list', async () => {
@@ -228,7 +266,7 @@ describe('AppContext', () => {
       if (!taskId) return;
 
       await act(async () => {
-        ctx.addComment(taskId, 'u1', 'Hello');
+        ctx.addComment(taskId, MOCK_USER_ALEX, 'Hello');
       });
 
       const task = ctx.tasks.find((t) => t.id === taskId)!;
@@ -244,7 +282,15 @@ describe('AppContext', () => {
 
       // Create a notification via addTask
       await act(async () => {
-        ctx.addTask({ title: 'Notif task', description: '', status: 'c1', priority: 'low', projectId: 'p1', tags: [], dependencies: [] });
+        ctx.addTask({
+          title: 'Notif task',
+          description: '',
+          status: MOCK_COL_LAUNCH_TODO,
+          priority: 'low',
+          projectId: MOCK_PROJECT_LAUNCH,
+          tags: [],
+          dependencies: [],
+        });
       });
 
       const notifId = ctx.notifications[0]?.id;

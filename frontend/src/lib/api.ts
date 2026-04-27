@@ -11,6 +11,9 @@ export interface ApiProject {
   id: string;
   name: string;
   description: string;
+  ownerId?: string;
+  /** From `project_members` + owner (MISSION — team in DB). */
+  memberIds?: string[];
 }
 
 export interface ApiColumn {
@@ -44,6 +47,21 @@ export interface ApiTask {
   updatedAt: number;
   aiSuggested?: boolean;
   aiThinking?: string;
+}
+
+/**
+ * Build JSON body for PATCH /tasks/:id. Omits undefined fields; encodes clear-due as `dueDate: 0`
+ * and clear-assignee as `assigneeId: null` so the server can distinguish from "field omitted".
+ */
+export function buildTaskPatchBody(updates: Partial<ApiTask>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  const u = updates as Record<string, unknown>;
+  for (const key of ['title', 'description', 'priority', 'status', 'tags'] as const) {
+    if (key in updates && u[key] !== undefined) out[key] = u[key];
+  }
+  if ('dueDate' in updates) out.dueDate = u.dueDate == null ? 0 : u.dueDate;
+  if ('assigneeId' in updates) out.assigneeId = u.assigneeId ?? null;
+  return out;
 }
 
 // ── Fetch helper ──────────────────────────────────────────────────────────────
@@ -107,7 +125,8 @@ export const api = {
 
   updateTask: (id: string, body: Partial<ApiTask>) =>
     apiFetch<{ task: ApiTask }>(`/api/v1/tasks/${id}`, {
-      method: 'PATCH', body: JSON.stringify(body),
+      method: 'PATCH',
+      body: JSON.stringify(buildTaskPatchBody(body)),
     }),
 
   deleteTask: (id: string) =>

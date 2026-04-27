@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { type Project, type Task, type Column, type User, type Notification, type PersonalTodo, type TimeEntry, type DashboardWidget, type Comment } from './types';
-import { MOCK_PROJECTS, MOCK_TASKS, MOCK_USERS } from './constants';
+import { MOCK_PROJECTS, MOCK_TASKS, MOCK_USERS, MOCK_USER_ALEX } from './constants';
 import { KANFLOW_KEYS, migrateZenithToKanflow, readStoredJson, writeStoredJson } from './lib/storage';
 import { api, type ApiTask, type ApiProject, type ApiColumn } from './lib/api';
 
@@ -33,6 +33,11 @@ interface AppContextType {
   updateUser: (updates: Partial<User>) => void;
   activeTimer: { taskId: string; startTime: number } | null;
   currentUser: User | null;
+  addProject: (name: string, description: string) => Promise<void>;
+  updateProject: (id: string, updates: Partial<Pick<Project, 'name' | 'description'>>) => void;
+  deleteProject: (id: string) => void;
+  addProjectTeamMember: (projectId: string, userId: string) => void;
+  removeProjectTeamMember: (projectId: string, userId: string) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -44,6 +49,8 @@ const DEFAULT_WIDGETS: DashboardWidget[] = [
   { id: '4', type: 'upcoming', title: 'High priority tasks', enabled: true, order: 3 },
   { id: '5', type: 'ai_insights', title: 'Kanflow AI insights', enabled: true, order: 4 },
 ];
+
+const DEFAULT_NEW_PROJECT_COLUMN_TITLES = ['To Do', 'In Progress', 'Review', 'Done'] as const;
 
 // ── API ↔ local type converters ────────────────────────────────────────────
 
@@ -78,13 +85,18 @@ function apiColumnToColumn(c: ApiColumn): Column {
 }
 
 function apiProjectToProject(p: ApiProject, columns: ApiColumn[] = []): Project {
+  const ownerId = (p.ownerId && p.ownerId.trim()) || MOCK_USER_ALEX;
+  const apiMembers = (p.memberIds ?? []).filter(Boolean);
+  const memberIds =
+    apiMembers.length > 0 ? Array.from(new Set(apiMembers)) : [ownerId];
   return {
     id: p.id,
     name: p.name,
     description: p.description,
     columns: columns.map(apiColumnToColumn).sort((a, b) => a.order - b.order),
     createdAt: Date.now(),
-    ownerId: 'u1',
+    ownerId,
+    memberIds,
   };
 }
 
@@ -106,7 +118,14 @@ function loadCachedState() {
 
   migrateZenithToKanflow();
 
-  const projects = readStoredJson<Project[]>(KANFLOW_KEYS.projects) ?? MOCK_PROJECTS;
+  const rawProjects = readStoredJson<Project[]>(KANFLOW_KEYS.projects) ?? MOCK_PROJECTS;
+  const projects = rawProjects.map((p) => ({
+    ...p,
+    memberIds:
+      p.memberIds && p.memberIds.length > 0
+        ? Array.from(new Set(p.memberIds))
+        : [p.ownerId || MOCK_USER_ALEX],
+  }));
   const tasks = readStoredJson<Task[]>(KANFLOW_KEYS.tasks) ?? MOCK_TASKS;
   const notifications = readStoredJson<Notification[]>(KANFLOW_KEYS.notifications) ?? [];
   const personalTodos = readStoredJson<PersonalTodo[]>(KANFLOW_KEYS.todos) ?? [];
@@ -172,7 +191,28 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
         if (cancelled) return;
 
-        setProjects(hydratedProjects);
+        // Empty API result must not wipe local mock / cached projects (MISSION — offline-tolerant).
+        if (hydratedProjects.length === 0) {
+          setApiOnline(true);
+          return;
+        }
+
+        setProjects((prev) =>
+          hydratedProjects.map((merged) => {
+            const old = prev.find((o) => o.id === merged.id);
+            const memberIds =
+              merged.memberIds && merged.memberIds.length > 0
+                ? merged.memberIds
+                : old?.memberIds && old.memberIds.length > 0
+                  ? old.memberIds
+                  : [merged.ownerId || MOCK_USER_ALEX];
+            return {
+              ...merged,
+              ownerId: merged.ownerId || MOCK_USER_ALEX,
+              memberIds: Array.from(new Set(memberIds)),
+            };
+          }),
+        );
         setTasks(allTasks);
         setApiOnline(true);
 
@@ -228,7 +268,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setTasks((prev) => [...prev, newTask]);
 
       addNotification({
-        userId: 'u1',
+        userId: currentUser?.id ?? MOCK_USER_ALEX,
         title: 'New task created',
         message: `Task "${newTask.title}" has been added to the project.`,
         type: 'task_update',
@@ -255,7 +295,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           .catch(() => {/* keep optimistic state */});
       }
     },
-    [apiOnline, addNotification],
+    [apiOnline, addNotification, currentUser],
   );
 
   const updateTask = useCallback(
@@ -263,14 +303,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setTasks((prev) =>
         prev.map((t) => (t.id === id ? { ...t, ...updates, updatedAt: Date.now() } : t)),
       );
-
-      setTasks((prev) => {
-        const oldTask = prev.find((t) => t.id === id);
-        if (updates.status && oldTask && oldTask.status !== updates.status) {
-          // notification fired below after state update
-        }
-        return prev;
-      });
 
       if (apiOnline) {
         api.updateTask(id, updates as Parameters<typeof api.updateTask>[1]).catch(() => {});
@@ -377,7 +409,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const newEntry: TimeEntry = {
         id: Math.random().toString(36).substring(2, 11),
         taskId,
-        userId: currentUser?.id || 'u1',
+        userId: currentUser?.id ?? MOCK_USER_ALEX,
         startTime: activeTimer.startTime,
         endTime,
         duration,
@@ -397,6 +429,139 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const updateDashboardWidgets = useCallback((widgets: DashboardWidget[]) => {
     setDashboardWidgets(widgets);
+  }, []);
+
+  const addProject = useCallback(
+    async (name: string, description: string) => {
+      const trimmed = name.trim();
+      if (!trimmed) return;
+      const localId =
+        typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID()
+          : Math.random().toString(36).slice(2);
+      const columns: Column[] = DEFAULT_NEW_PROJECT_COLUMN_TITLES.map((title, order) => ({
+        id:
+          typeof crypto !== 'undefined' && crypto.randomUUID
+            ? crypto.randomUUID()
+            : `col-${order}-${Math.random().toString(36).slice(2)}`,
+        title,
+        order,
+      }));
+      const ownerId = currentUser?.id ?? MOCK_USER_ALEX;
+      const newProject: Project = {
+        id: localId,
+        name: trimmed,
+        description: description.trim(),
+        columns,
+        createdAt: Date.now(),
+        ownerId,
+        memberIds: [ownerId],
+      };
+      setProjects((p) => [...p, newProject]);
+      setActiveProjectId(localId);
+
+      if (apiOnline) {
+        try {
+          const { project } = await api.createProject({
+            name: trimmed,
+            description: description.trim(),
+          });
+          for (let i = 0; i < DEFAULT_NEW_PROJECT_COLUMN_TITLES.length; i++) {
+            await api.createColumn(project.id, { title: DEFAULT_NEW_PROJECT_COLUMN_TITLES[i], order: i });
+          }
+          const { columns: serverCols } = await api.getColumns(project.id);
+          const cols = serverCols.map(apiColumnToColumn).sort((a, b) => a.order - b.order);
+          setProjects((prev) =>
+            prev.map((pr) =>
+              pr.id === localId
+                ? {
+                    ...pr,
+                    id: project.id,
+                    name: project.name,
+                    description: project.description,
+                    ownerId: (project.ownerId && project.ownerId.trim()) || ownerId,
+                    columns: cols,
+                    memberIds: pr.memberIds,
+                  }
+                : pr,
+            ),
+          );
+          setTasks((prev) => prev.map((t) => (t.projectId === localId ? { ...t, projectId: project.id } : t)));
+          setActiveProjectId((aid) => (aid === localId ? project.id : aid));
+        } catch {
+          /* keep optimistic local project */
+        }
+      }
+    },
+    [apiOnline, currentUser],
+  );
+
+  const updateProject = useCallback(
+    (id: string, updates: Partial<Pick<Project, 'name' | 'description'>>) => {
+      setProjects((prev) =>
+        prev.map((p) => {
+          if (p.id !== id) return p;
+          const nextName = updates.name !== undefined ? updates.name.trim() : p.name;
+          if (updates.name !== undefined && nextName === '') return p;
+          const nextDesc = updates.description !== undefined ? updates.description : p.description;
+          return {
+            ...p,
+            ...(updates.name !== undefined ? { name: nextName } : {}),
+            ...(updates.description !== undefined ? { description: nextDesc } : {}),
+          };
+        }),
+      );
+      if (apiOnline) {
+        const patch: { name?: string; description?: string } = {};
+        if (updates.name !== undefined) patch.name = updates.name.trim();
+        if (updates.description !== undefined) patch.description = updates.description;
+        if (Object.keys(patch).length > 0) {
+          void api.updateProject(id, patch).catch(() => {});
+        }
+      }
+    },
+    [apiOnline],
+  );
+
+  const deleteProject = useCallback(
+    (id: string) => {
+      const remaining = projects.filter((p) => p.id !== id);
+      setProjects(remaining);
+      setTasks((t) => t.filter((x) => x.projectId !== id));
+      try {
+        localStorage.removeItem(`kanflow_chat_${id}`);
+      } catch {
+        /* ignore */
+      }
+      setActiveProjectId((aid) => (aid === id ? remaining[0]?.id ?? null : aid));
+      if (apiOnline) {
+        void api.deleteProject(id).catch(() => {});
+      }
+    },
+    [apiOnline, projects],
+  );
+
+  const addProjectTeamMember = useCallback((projectId: string, userId: string) => {
+    setProjects((prev) =>
+      prev.map((p) => {
+        if (p.id !== projectId) return p;
+        const cur = new Set([...(p.memberIds ?? []), p.ownerId]);
+        cur.add(userId);
+        return { ...p, memberIds: Array.from(cur) };
+      }),
+    );
+  }, []);
+
+  const removeProjectTeamMember = useCallback((projectId: string, userId: string) => {
+    setProjects((prev) =>
+      prev.map((p) => {
+        if (p.id !== projectId) return p;
+        if (userId === p.ownerId) return p;
+        const cur = new Set([...(p.memberIds ?? []), p.ownerId]);
+        cur.delete(userId);
+        return { ...p, memberIds: Array.from(cur) };
+      }),
+    );
   }, []);
 
   const updateUser = useCallback((updates: Partial<User>) => {
@@ -434,6 +599,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         updateUser,
         activeTimer,
         currentUser,
+        addProject,
+        updateProject,
+        deleteProject,
+        addProjectTeamMember,
+        removeProjectTeamMember,
       }}
     >
       {children}

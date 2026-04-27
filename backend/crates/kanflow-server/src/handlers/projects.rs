@@ -1,10 +1,12 @@
+use std::collections::HashMap;
+
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::Json;
 use serde::Deserialize;
 use serde_json::json;
-use sqlx::FromRow;
+use sqlx::{FromRow, QueryBuilder};
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -16,6 +18,7 @@ struct ProjectRow {
     id: Uuid,
     name: String,
     description: String,
+    owner_id: Uuid,
 }
 
 pub async fn list_projects(State(state): State<AppState>) -> impl IntoResponse {
@@ -27,7 +30,7 @@ pub async fn list_projects(State(state): State<AppState>) -> impl IntoResponse {
             .into_response();
     };
     let rows = match sqlx::query_as::<_, ProjectRow>(
-        "SELECT id, name, description FROM projects ORDER BY created_at DESC LIMIT 100",
+        "SELECT id, name, description, owner_id FROM projects ORDER BY created_at DESC LIMIT 100",
     )
     .fetch_all(pool)
     .await
@@ -41,9 +44,45 @@ pub async fn list_projects(State(state): State<AppState>) -> impl IntoResponse {
                 .into_response();
         }
     };
+    let ids: Vec<Uuid> = rows.iter().map(|r| r.id).collect();
+    let mut member_map: HashMap<Uuid, Vec<String>> = HashMap::new();
+    if !ids.is_empty() {
+        let mut qb = QueryBuilder::new(
+            "SELECT project_id, user_id FROM project_members WHERE project_id IN (",
+        );
+        {
+            let mut separated = qb.separated(", ");
+            for id in &ids {
+                separated.push_bind(id);
+            }
+        }
+        qb.push(")");
+        if let Ok(pairs) = qb.build_query_as::<(Uuid, Uuid)>().fetch_all(pool).await {
+            for (pid, uid) in pairs {
+                member_map
+                    .entry(pid)
+                    .or_default()
+                    .push(uid.to_string());
+            }
+        }
+    }
+
     let body: Vec<_> = rows
         .into_iter()
-        .map(|r| json!({"id": r.id, "name": r.name, "description": r.description}))
+        .map(|r| {
+            let owner_str = r.owner_id.to_string();
+            let mut mids = member_map.get(&r.id).cloned().unwrap_or_default();
+            if !mids.contains(&owner_str) {
+                mids.insert(0, owner_str);
+            }
+            json!({
+                "id": r.id,
+                "name": r.name,
+                "description": r.description,
+                "ownerId": r.owner_id,
+                "memberIds": mids,
+            })
+        })
         .collect();
     Json(json!({ "projects": body })).into_response()
 }
@@ -73,7 +112,7 @@ pub async fn update_project(
         return (StatusCode::SERVICE_UNAVAILABLE, Json(json!({ "error": "postgres_disabled" }))).into_response();
     };
     let current = sqlx::query_as::<_, ProjectRow>(
-        "SELECT id, name, description FROM projects WHERE id = $1",
+        "SELECT id, name, description, owner_id FROM projects WHERE id = $1",
     )
     .bind(id)
     .fetch_optional(pool)
@@ -86,7 +125,7 @@ pub async fn update_project(
     let name = body.name.as_deref().map(str::trim).filter(|s| !s.is_empty()).unwrap_or(&current.name).to_string();
     let description = body.description.as_deref().unwrap_or(&current.description).to_string();
     match sqlx::query_as::<_, ProjectRow>(
-        "UPDATE projects SET name=$1, description=$2 WHERE id=$3 RETURNING id, name, description",
+        "UPDATE projects SET name=$1, description=$2 WHERE id=$3 RETURNING id, name, description, owner_id",
     )
     .bind(&name)
     .bind(&description)
@@ -94,7 +133,10 @@ pub async fn update_project(
     .fetch_one(pool)
     .await
     {
-        Ok(r) => Json(json!({ "project": { "id": r.id, "name": r.name, "description": r.description } })).into_response(),
+        Ok(r) => Json(json!({
+            "project": { "id": r.id, "name": r.name, "description": r.description, "ownerId": r.owner_id }
+        }))
+        .into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
     }
 }
@@ -144,7 +186,7 @@ pub async fn create_project(State(state): State<AppState>, Json(body): Json<Crea
     let rec = match sqlx::query_as::<_, ProjectRow>(
         r#"INSERT INTO projects (name, description, owner_id)
            VALUES ($1, $2, $3)
-           RETURNING id, name, description"#,
+           RETURNING id, name, description, owner_id"#,
     )
     .bind(name)
     .bind(body.description.trim())
@@ -161,10 +203,26 @@ pub async fn create_project(State(state): State<AppState>, Json(body): Json<Crea
                 .into_response();
         }
     };
+    let _ = sqlx::query(
+        r#"INSERT INTO project_members (project_id, user_id)
+           VALUES ($1, $2)
+           ON CONFLICT (project_id, user_id) DO NOTHING"#,
+    )
+    .bind(rec.id)
+    .bind(rec.owner_id)
+    .execute(pool)
+    .await;
+    let owner_str = rec.owner_id.to_string();
     (
         StatusCode::CREATED,
         Json(json!({
-            "project": { "id": rec.id, "name": rec.name, "description": rec.description }
+            "project": {
+                "id": rec.id,
+                "name": rec.name,
+                "description": rec.description,
+                "ownerId": rec.owner_id,
+                "memberIds": [owner_str],
+            }
         })),
     )
         .into_response()

@@ -14,7 +14,8 @@ COPY . .
 
 # Ollama URL/model are read at runtime via import.meta.env (VITE_* vars).
 # Pass them as build args so Vite can inline them into the static bundle.
-ARG VITE_OLLAMA_URL="http://localhost:11434"
+# Compose overrides with `/ollama` so nginx can proxy to the ollama service.
+ARG VITE_OLLAMA_URL="/ollama"
 ARG VITE_OLLAMA_MODEL="llama3.2"
 ENV VITE_OLLAMA_URL=$VITE_OLLAMA_URL
 ENV VITE_OLLAMA_MODEL=$VITE_OLLAMA_MODEL

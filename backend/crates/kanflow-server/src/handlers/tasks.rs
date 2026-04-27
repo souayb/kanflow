@@ -158,16 +158,17 @@ pub async fn list_tasks(
 
 // ── POST /api/v1/projects/:project_id/tasks ──────────────────────────────────
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateTaskBody {
     pub title: String,
     #[serde(default)]
     pub description: String,
     #[serde(default = "default_priority")]
     pub priority: String,
-    pub status: Uuid,           // column_id
+    pub status: Uuid, // column_id
     pub assignee_id: Option<Uuid>,
-    pub due_date: Option<i64>,  // Unix ms
+    pub due_date: Option<i64>, // Unix ms
     #[serde(default)]
     pub tags: Vec<String>,
 }
@@ -211,14 +212,17 @@ pub async fn create_task(
 
 // ── PATCH /api/v1/tasks/:task_id ─────────────────────────────────────────────
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UpdateTaskBody {
     pub title: Option<String>,
     pub description: Option<String>,
     pub priority: Option<String>,
-    pub status: Option<Uuid>,        // column_id
-    pub assignee_id: Option<Uuid>,
-    pub due_date: Option<i64>,       // Unix ms, 0 = clear
+    pub status: Option<Uuid>, // column_id
+    /// Omitted = unchanged; `null` = clear assignee; UUID string = set assignee.
+    pub assignee_id: Option<Option<Uuid>>,
+    /// Unix ms; send `0` to clear (frontend convention).
+    pub due_date: Option<i64>,
     pub tags: Option<Vec<String>>,
 }
 
@@ -247,7 +251,10 @@ pub async fn update_task(
     let description = body.description.unwrap_or(current.description);
     let priority = body.priority.unwrap_or(current.priority);
     let column_id = body.status.unwrap_or(current.column_id);
-    let assignee_id = body.assignee_id.or(current.assignee_id);
+    let assignee_id = match body.assignee_id {
+        None => current.assignee_id,
+        Some(inner) => inner,
+    };
     let due_at: Option<DateTime<Utc>> = match body.due_date {
         Some(0) => None,
         Some(ms) => DateTime::from_timestamp_millis(ms),

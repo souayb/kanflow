@@ -52,6 +52,8 @@ export default function ChatComponent() {
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  /** Avoid saving stale messages under a new project id right after switching (race). */
+  const skipNextPersist = useRef(false);
   const { activeProjectId, projects, currentUser } = useApp();
 
   const activeProject = projects.find((p) => p.id === activeProjectId);
@@ -61,11 +63,16 @@ export default function ChatComponent() {
       setMessages([]);
       return;
     }
+    skipNextPersist.current = true;
     setMessages(loadMessages(activeProjectId));
   }, [activeProjectId]);
 
   useEffect(() => {
     if (!activeProjectId) return;
+    if (skipNextPersist.current) {
+      skipNextPersist.current = false;
+      return;
+    }
     saveMessages(activeProjectId, messages);
   }, [messages, activeProjectId]);
 
@@ -110,8 +117,18 @@ export default function ChatComponent() {
         type: 'ai',
       };
       setMessages((prev) => [...prev, aiMsg]);
-    } catch (aiError) {
-      console.error('Ollama AI reply failed:', aiError);
+    } catch (err) {
+      console.error('Ollama AI reply failed:', err);
+      const hint = err instanceof Error ? err.message : 'Could not reach Ollama.';
+      const errMsg: Message = {
+        id: crypto.randomUUID(),
+        senderId: 'kanflow-ai',
+        senderName: 'Kanflow AI',
+        content: `Sorry — I could not generate a reply (${hint}). Start Ollama (\`ollama serve\`) or set VITE_OLLAMA_URL. With Docker Compose, the app proxies requests to \`/ollama\`.`,
+        timestamp: Date.now(),
+        type: 'ai',
+      };
+      setMessages((prev) => [...prev, errMsg]);
     } finally {
       setIsTyping(false);
     }
