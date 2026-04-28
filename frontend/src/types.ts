@@ -118,3 +118,18 @@ export interface TimeEntry {
   description: string;
   createdAt: number;
 }
+
+/** Persisted in localStorage (`kanflow_integrations`). */
+export interface IntegrationSettings {
+  github: {
+    enabled: boolean;
+    repoUrl: string;
+    defaultBranch: string;
+  };
+}
+
+export const DEFAULT_INTEGRATION_SETTINGS: IntegrationSettings = {
+  github: { enabled: true, repoUrl: '', defaultBranch: 'main' },
+};
+
+export type DashboardChartWindowDays = 7 | 14 | 30;

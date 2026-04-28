@@ -12,6 +12,8 @@ export const KANFLOW_KEYS = {
   dashboardWidgets: 'kanflow_dashboard_widgets',
   user: 'kanflow_user',
   activeProjectId: 'kanflow_active_project_id',
+  integrations: 'kanflow_integrations',
+  dashboardChartDays: 'kanflow_dashboard_chart_days',
 } as const;
 
 const LEGACY = {

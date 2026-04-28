@@ -1,5 +1,18 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { type Project, type Task, type Column, type User, type Notification, type PersonalTodo, type TimeEntry, type DashboardWidget, type Comment } from './types';
+import {
+  type Project,
+  type Task,
+  type Column,
+  type User,
+  type Notification,
+  type PersonalTodo,
+  type TimeEntry,
+  type DashboardWidget,
+  type Comment,
+  type IntegrationSettings,
+  type DashboardChartWindowDays,
+  DEFAULT_INTEGRATION_SETTINGS,
+} from './types';
 import { MOCK_PROJECTS, MOCK_TASKS, MOCK_USERS, MOCK_USER_ALEX } from './constants';
 import { KANFLOW_KEYS, migrateZenithToKanflow, readStoredJson, writeStoredJson } from './lib/storage';
 import { api, type ApiTask, type ApiProject, type ApiColumn } from './lib/api';
@@ -38,6 +51,20 @@ interface AppContextType {
   deleteProject: (id: string) => void;
   addProjectTeamMember: (projectId: string, userId: string) => void;
   removeProjectTeamMember: (projectId: string, userId: string) => void;
+  /** Header search — filters tasks across projects in the layout dropdown. */
+  globalSearchQuery: string;
+  setGlobalSearchQuery: (q: string) => void;
+  /** Switch to Board and open the task modal for this task id. */
+  openTaskOnBoard: (taskId: string) => void;
+  /** Clears the pending task id after Kanban has opened the modal. */
+  clearPendingOpenTask: () => void;
+  /** Increments when navigation to board is requested (App listens to switch view). */
+  boardNavSeq: number;
+  pendingOpenTaskId: string | null;
+  integrationSettings: IntegrationSettings;
+  setIntegrationSettings: (patch: Partial<IntegrationSettings> | ((prev: IntegrationSettings) => IntegrationSettings)) => void;
+  dashboardChartDays: DashboardChartWindowDays;
+  setDashboardChartDays: (d: DashboardChartWindowDays) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -113,6 +140,8 @@ function loadCachedState() {
       dashboardWidgets: DEFAULT_WIDGETS,
       activeProjectId: MOCK_PROJECTS[0]?.id ?? null,
       currentUser: MOCK_USERS[0] ?? null,
+      integrationSettings: DEFAULT_INTEGRATION_SETTINGS,
+      dashboardChartDays: 7 as DashboardChartWindowDays,
     };
   }
 
@@ -138,7 +167,30 @@ function loadCachedState() {
     activeProjectId = projects[0]?.id ?? null;
   }
 
-  return { projects, tasks, notifications, personalTodos, timeEntries, dashboardWidgets, activeProjectId, currentUser };
+  const integrations =
+    readStoredJson<IntegrationSettings>(KANFLOW_KEYS.integrations) ?? DEFAULT_INTEGRATION_SETTINGS;
+  const mergedIntegrations: IntegrationSettings = {
+    ...DEFAULT_INTEGRATION_SETTINGS,
+    ...integrations,
+    github: { ...DEFAULT_INTEGRATION_SETTINGS.github, ...integrations.github },
+  };
+
+  const rawDays = localStorage.getItem(KANFLOW_KEYS.dashboardChartDays);
+  const dashboardChartDays: DashboardChartWindowDays =
+    rawDays === '14' || rawDays === '30' ? (Number(rawDays) as DashboardChartWindowDays) : 7;
+
+  return {
+    projects,
+    tasks,
+    notifications,
+    personalTodos,
+    timeEntries,
+    dashboardWidgets,
+    activeProjectId,
+    currentUser,
+    integrationSettings: mergedIntegrations,
+    dashboardChartDays,
+  };
 }
 
 // ── Provider ───────────────────────────────────────────────────────────────
@@ -157,6 +209,11 @@ export function AppProvider({ children, kcUser }: { children: React.ReactNode; k
   // Prefer the Keycloak-authenticated user; fall back to localStorage/mock
   const [currentUser, setCurrentUser] = useState<User | null>(kcUser ?? initial.currentUser);
   const [apiOnline, setApiOnline] = useState(false);
+  const [globalSearchQuery, setGlobalSearchQuery] = useState('');
+  const [pendingOpenTaskId, setPendingOpenTaskId] = useState<string | null>(null);
+  const [boardNavSeq, setBoardNavSeq] = useState(0);
+  const [integrationSettings, setIntegrationSettingsState] = useState<IntegrationSettings>(initial.integrationSettings);
+  const [dashboardChartDays, setDashboardChartDaysState] = useState<DashboardChartWindowDays>(initial.dashboardChartDays);
 
   // Sync kcUser into currentUser whenever it changes (e.g. after token refresh)
   useEffect(() => {
@@ -570,6 +627,51 @@ export function AppProvider({ children, kcUser }: { children: React.ReactNode; k
     );
   }, []);
 
+  const clearPendingOpenTask = useCallback(() => {
+    setPendingOpenTaskId(null);
+  }, []);
+
+  const openTaskOnBoard = useCallback(
+    (taskId: string) => {
+      const t = tasks.find((x) => x.id === taskId);
+      if (!t) return;
+      setActiveProjectId(t.projectId);
+      setPendingOpenTaskId(taskId);
+      setBoardNavSeq((s) => s + 1);
+    },
+    [tasks],
+  );
+
+  const setIntegrationSettings = useCallback(
+    (patch: Partial<IntegrationSettings> | ((prev: IntegrationSettings) => IntegrationSettings)) => {
+      setIntegrationSettingsState((prev) => {
+        if (typeof patch === 'function') return patch(prev);
+        return {
+          ...prev,
+          ...patch,
+          github: { ...prev.github, ...(patch.github ?? {}) },
+        };
+      });
+    },
+    [],
+  );
+
+  const setDashboardChartDays = useCallback((d: DashboardChartWindowDays) => {
+    setDashboardChartDaysState(d);
+  }, []);
+
+  useEffect(() => {
+    writeStoredJson(KANFLOW_KEYS.integrations, integrationSettings);
+  }, [integrationSettings]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(KANFLOW_KEYS.dashboardChartDays, String(dashboardChartDays));
+    } catch {
+      /* ignore */
+    }
+  }, [dashboardChartDays]);
+
   const updateUser = useCallback((updates: Partial<User>) => {
     setCurrentUser((prev) => (prev ? { ...prev, ...updates } : null));
   }, []);
@@ -610,6 +712,16 @@ export function AppProvider({ children, kcUser }: { children: React.ReactNode; k
         deleteProject,
         addProjectTeamMember,
         removeProjectTeamMember,
+        globalSearchQuery,
+        setGlobalSearchQuery,
+        openTaskOnBoard,
+        clearPendingOpenTask,
+        boardNavSeq,
+        pendingOpenTaskId,
+        integrationSettings,
+        setIntegrationSettings,
+        dashboardChartDays,
+        setDashboardChartDays,
       }}
     >
       {children}

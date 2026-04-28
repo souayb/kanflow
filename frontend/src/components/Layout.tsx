@@ -16,9 +16,10 @@ import {
 import { useApp } from '../AppContext';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
-import ChatComponent from './ChatComponent';
+import TeamChatDock from './TeamChatDock';
 import ProfileDropdown from './ProfileDropdown';
 import ProjectsSidebarBlock from './ProjectsSidebarBlock';
+import LayoutSearchResults from './LayoutSearchResults';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -27,9 +28,20 @@ interface LayoutProps {
 }
 
 export default function Layout({ children, currentView, onViewChange }: LayoutProps) {
-  const { projects, activeProjectId, notifications, markNotificationAsRead } = useApp();
+  const {
+    projects,
+    activeProjectId,
+    notifications,
+    markNotificationAsRead,
+    globalSearchQuery,
+    setGlobalSearchQuery,
+    openTaskOnBoard,
+    integrationSettings,
+    setIntegrationSettings,
+  } = useApp();
   const [isNotificationsOpen, setIsNotificationsOpen] = React.useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(true);
+  const searchWrapRef = React.useRef<HTMLDivElement>(null);
 
   const activeProject = projects.find((p) => p.id === activeProjectId);
   const unreadCount = notifications.filter((n) => !n.read).length;
@@ -92,10 +104,56 @@ export default function Layout({ children, currentView, onViewChange }: LayoutPr
 
           <div className="px-6 md:px-8 py-6 border-t border-kf-divider-gray">
             <div className="text-xs text-kf-secondary-text font-medium mb-3 tracking-tight">Integrations</div>
-            <div className="space-y-3">
-              <ConnectorItem icon={<Github size={14} />} label="GitHub" status="Synced" />
+            <div className="space-y-4">
+              <div className="rounded-xl border border-kf-divider-gray bg-kf-soft-gray/50 p-3 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="p-2 rounded-[10px] bg-kf-warm-gray border border-kf-divider-gray text-kf-icon-secondary shrink-0">
+                      <Github size={14} />
+                    </div>
+                    <span className="text-xs font-medium text-kf-slate truncate">GitHub</span>
+                  </div>
+                  <label className="flex items-center gap-1.5 shrink-0 text-[10px] font-semibold uppercase tracking-wide text-kf-slate cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="rounded border-kf-divider-gray text-kf-meta-blue focus:ring-kf-meta-blue/30"
+                      checked={integrationSettings.github.enabled}
+                      onChange={(e) =>
+                        setIntegrationSettings({
+                          github: { ...integrationSettings.github, enabled: e.target.checked },
+                        })
+                      }
+                    />
+                    On
+                  </label>
+                </div>
+                <input
+                  type="url"
+                  className="kf-input text-xs py-1.5 w-full"
+                  placeholder="https://github.com/org/repo"
+                  value={integrationSettings.github.repoUrl}
+                  disabled={!integrationSettings.github.enabled}
+                  onChange={(e) =>
+                    setIntegrationSettings({
+                      github: { ...integrationSettings.github, repoUrl: e.target.value },
+                    })
+                  }
+                />
+                <input
+                  type="text"
+                  className="kf-input text-xs py-1.5 w-full"
+                  placeholder="Default branch (e.g. main)"
+                  value={integrationSettings.github.defaultBranch}
+                  disabled={!integrationSettings.github.enabled}
+                  onChange={(e) =>
+                    setIntegrationSettings({
+                      github: { ...integrationSettings.github, defaultBranch: e.target.value },
+                    })
+                  }
+                />
+              </div>
               <ConnectorItem icon={<Calendar size={14} />} label="Calendar" status="Active" />
-              <ConnectorItem icon={<MessageSquare size={14} />} label="Chat" status="Online" />
+              <ConnectorItem icon={<MessageSquare size={14} />} label="Team chat" status="Dock" />
             </div>
           </div>
         </div>
@@ -136,7 +194,7 @@ export default function Layout({ children, currentView, onViewChange }: LayoutPr
           </div>
 
           <div className="flex items-center gap-2 md:gap-4">
-            <div className="relative group hidden lg:block">
+            <div ref={searchWrapRef} className="relative group min-w-0 flex-1 max-w-md hidden sm:block">
               <Search
                 className="absolute left-3 top-1/2 -translate-y-1/2 text-kf-icon-secondary pointer-events-none"
                 size={18}
@@ -144,8 +202,21 @@ export default function Layout({ children, currentView, onViewChange }: LayoutPr
               />
               <input
                 type="search"
-                placeholder="Search…"
-                className="kf-input pl-10 pr-4 py-2 text-sm w-56 xl:w-72 rounded-full border-kf-divider-gray"
+                placeholder="Search tasks across projects…"
+                className="kf-input pl-10 pr-4 py-2 text-sm w-full sm:w-56 md:w-64 lg:w-72 xl:w-80 rounded-full border-kf-divider-gray"
+                value={globalSearchQuery}
+                onChange={(e) => setGlobalSearchQuery(e.target.value)}
+                aria-autocomplete="list"
+                aria-controls="kanflow-global-search-results"
+              />
+              <LayoutSearchResults
+                query={globalSearchQuery}
+                open={globalSearchQuery.trim().length > 0}
+                onClose={() => setGlobalSearchQuery('')}
+                onPickTask={(id) => {
+                  openTaskOnBoard(id);
+                  setGlobalSearchQuery('');
+                }}
               />
             </div>
 
@@ -223,7 +294,7 @@ export default function Layout({ children, currentView, onViewChange }: LayoutPr
           {children}
         </div>
 
-        <ChatComponent />
+        <TeamChatDock />
       </main>
     </div>
   );

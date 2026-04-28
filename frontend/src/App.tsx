@@ -16,6 +16,15 @@ import TimeKeepingView from './components/TimeKeepingView';
 
 function AppContent() {
   const [currentView, setCurrentView] = React.useState<'dashboard' | 'kanban' | 'reporting' | 'todos' | 'time'>('kanban');
+  const { boardNavSeq } = useApp();
+  const lastNavSeq = React.useRef(0);
+
+  React.useEffect(() => {
+    if (boardNavSeq > lastNavSeq.current) {
+      lastNavSeq.current = boardNavSeq;
+      setCurrentView('kanban');
+    }
+  }, [boardNavSeq]);
 
   return (
     <Layout currentView={currentView} onViewChange={setCurrentView}>

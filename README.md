@@ -319,7 +319,7 @@ kanban/
             ├── ReportingView.tsx
             ├── PersonalTodoView.tsx
             ├── TimeKeepingView.tsx
-            ├── ChatComponent.tsx   # Per-project chat + Ollama AI replies
+            ├── TeamChatDock.tsx    # Channels, DMs, Kanflow AI (localStorage)
             ├── ProfileDropdown.tsx
             ├── DashboardCustomizer.tsx
             └── Avatar.tsx          # Offline initials avatar
