@@ -12,6 +12,7 @@ import {
   MessageSquare,
   Target,
   Clock,
+  UserPlus,
 } from 'lucide-react';
 import { useApp } from '../AppContext';
 import { cn } from '../lib/utils';
@@ -20,6 +21,7 @@ import TeamChatDock from './TeamChatDock';
 import ProfileDropdown from './ProfileDropdown';
 import ProjectsSidebarBlock from './ProjectsSidebarBlock';
 import LayoutSearchResults from './LayoutSearchResults';
+import AdminCreateUserModal from './AdminCreateUserModal';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -38,13 +40,21 @@ export default function Layout({ children, currentView, onViewChange }: LayoutPr
     openTaskOnBoard,
     integrationSettings,
     setIntegrationSettings,
+    currentUser,
+    apiOnline,
   } = useApp();
   const [isNotificationsOpen, setIsNotificationsOpen] = React.useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(true);
+  const [adminUserModalOpen, setAdminUserModalOpen] = React.useState(false);
   const searchWrapRef = React.useRef<HTMLDivElement>(null);
 
   const activeProject = projects.find((p) => p.id === activeProjectId);
-  const unreadCount = notifications.filter((n) => !n.read).length;
+  const myNotifications = React.useMemo(
+    () =>
+      !currentUser?.id ? notifications : notifications.filter((n) => n.userId === currentUser.id),
+    [notifications, currentUser?.id],
+  );
+  const unreadCount = myNotifications.filter((n) => !n.read).length;
 
   return (
     <div className="flex h-screen bg-kf-soft-gray text-kf-charcoal font-sans overflow-hidden">
@@ -222,6 +232,19 @@ export default function Layout({ children, currentView, onViewChange }: LayoutPr
 
             <ProfileDropdown />
 
+            {currentUser?.role === 'Admin' && (
+              <button
+                type="button"
+                title={apiOnline ? 'Create database user' : 'API offline — connect server to create users'}
+                disabled={!apiOnline}
+                onClick={() => apiOnline && setAdminUserModalOpen(true)}
+                className="hidden sm:flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-kf-meta-blue hover:bg-kf-baby-blue/40 rounded-full border border-kf-meta-blue/25 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <UserPlus size={16} strokeWidth={1.75} />
+                User
+              </button>
+            )}
+
             <div className="relative">
               <button
                 type="button"
@@ -252,16 +275,16 @@ export default function Layout({ children, currentView, onViewChange }: LayoutPr
                         <button
                           type="button"
                           className="text-xs text-kf-link font-medium hover:underline"
-                          onClick={() => notifications.forEach((n) => !n.read && markNotificationAsRead(n.id))}
+                          onClick={() => myNotifications.forEach((n) => !n.read && markNotificationAsRead(n.id))}
                         >
                           Mark all read
                         </button>
                       </div>
                       <div className="flex-1 overflow-y-auto custom-scrollbar">
-                        {notifications.length === 0 ? (
+                        {myNotifications.length === 0 ? (
                           <div className="p-8 text-center text-kf-slate text-sm">No notifications yet.</div>
                         ) : (
-                          notifications.map((n) => (
+                          myNotifications.map((n) => (
                             <div
                               key={n.id}
                               role="button"
@@ -295,6 +318,7 @@ export default function Layout({ children, currentView, onViewChange }: LayoutPr
         </div>
 
         <TeamChatDock />
+        {adminUserModalOpen && <AdminCreateUserModal onClose={() => setAdminUserModalOpen(false)} />}
       </main>
     </div>
   );

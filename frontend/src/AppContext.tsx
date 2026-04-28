@@ -15,7 +15,7 @@ import {
 } from './types';
 import { MOCK_PROJECTS, MOCK_TASKS, MOCK_USERS, MOCK_USER_ALEX } from './constants';
 import { KANFLOW_KEYS, migrateZenithToKanflow, readStoredJson, writeStoredJson } from './lib/storage';
-import { api, type ApiTask, type ApiProject, type ApiColumn } from './lib/api';
+import { api, type ApiTask, type ApiProject, type ApiColumn, type ApiUserRow } from './lib/api';
 
 interface AppContextType {
   projects: Project[];
@@ -44,6 +44,8 @@ interface AppContextType {
   getTimeEntriesForTask: (taskId: string) => TimeEntry[];
   updateDashboardWidgets: (widgets: DashboardWidget[]) => void;
   updateUser: (updates: Partial<User>) => void;
+  /** Inserts into Postgres (admin realm role) and refreshes the in-memory user directory. */
+  createUserAdmin: (body: { name: string; email: string; role?: string }) => Promise<ApiUserRow>;
   activeTimer: { taskId: string; startTime: number } | null;
   currentUser: User | null;
   addProject: (name: string, description: string) => Promise<void>;
@@ -199,7 +201,7 @@ export function AppProvider({ children, kcUser }: { children: React.ReactNode; k
   const initial = loadCachedState();
   const [projects, setProjects] = useState<Project[]>(initial.projects);
   const [tasks, setTasks] = useState<Task[]>(initial.tasks);
-  const [users] = useState<User[]>(MOCK_USERS);
+  const [users, setUsers] = useState<User[]>(MOCK_USERS);
   const [notifications, setNotifications] = useState<Notification[]>(initial.notifications);
   const [personalTodos, setPersonalTodos] = useState<PersonalTodo[]>(initial.personalTodos);
   const [timeEntries, setTimeEntries] = useState<TimeEntry[]>(initial.timeEntries);
@@ -225,8 +227,22 @@ export function AppProvider({ children, kcUser }: { children: React.ReactNode; k
     let cancelled = false;
     (async () => {
       try {
-        const { projects: apiProjects } = await api.getProjects();
+        const [{ projects: apiProjects }, usersRes] = await Promise.all([
+          api.getProjects(),
+          api.getUsers().catch(() => ({ users: [] as ApiUserRow[] })),
+        ]);
         if (cancelled) return;
+
+        if (usersRes.users.length > 0) {
+          setUsers(
+            usersRes.users.map((u) => ({
+              id: u.id,
+              name: u.name,
+              email: u.email,
+              role: u.role,
+            })),
+          );
+        }
 
         const hydratedProjects: Project[] = await Promise.all(
           apiProjects.map(async (p) => {
@@ -676,6 +692,15 @@ export function AppProvider({ children, kcUser }: { children: React.ReactNode; k
     setCurrentUser((prev) => (prev ? { ...prev, ...updates } : null));
   }, []);
 
+  const createUserAdmin = useCallback(async (body: { name: string; email: string; role?: string }) => {
+    const { user } = await api.createUser(body);
+    setUsers((prev) => {
+      const filtered = prev.filter((u) => u.email.toLowerCase() !== user.email.toLowerCase());
+      return [...filtered, { id: user.id, name: user.name, email: user.email, role: user.role }];
+    });
+    return user;
+  }, []);
+
   return (
     <AppContext.Provider
       value={{
@@ -705,6 +730,7 @@ export function AppProvider({ children, kcUser }: { children: React.ReactNode; k
         getTimeEntriesForTask,
         updateDashboardWidgets,
         updateUser,
+        createUserAdmin,
         activeTimer,
         currentUser,
         addProject,

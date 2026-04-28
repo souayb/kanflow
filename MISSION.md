@@ -287,23 +287,29 @@ ChatMessage {
 * AI-suggested tasks (`aiSuggested: true`) generated via Gemini API
 * AI thinking/reasoning stored in `aiThinking` field
 * AI insights widget on dashboard
-* Chat component with AI context (`src/lib/ai.ts`)
+* **Team chat dock** includes an **AI** tab that calls Ollama via `frontend/src/lib/ai.ts` (project-scoped context)
 
 ---
 
 ### 5.10 Notifications
 
-* In-app notification feed
-* Types: task update, comment, mention, AI insight
-* Mark individual notifications as read
-* Badge count for unread
+* In-app notification feed (header bell); entries are **scoped to `userId === currentUser.id`** so assignees only see items addressed to them.
+* Types: `task_update`, `comment`, `mention`, `ai_insight`
+* **Kanflow AI — Apply all to task** (`TaskModal`): after a successful apply, the actor gets an **`ai_insight`** notification summarizing the update; if the task has an assignee other than the actor, that assignee gets a **`task_update`** notification.
+* Mark individual notifications as read (or “Mark all read” for the visible list)
+* Badge count reflects **unread notifications for the signed-in user only**
 
 ---
 
-### 5.11 Collaboration (Chat)
+### 5.11 Collaboration (Team chat)
 
-* Per-project chat messages (`ChatMessage` entity)
-* Persists in-browser per project (`kanflow_chat_<projectId>`); API/WebSocket when wired to the Rust service
+* **UI:** `frontend/src/components/TeamChatDock.tsx` — floating dock (Slack-style inspiration: channels sidebar, direct messages, search, optional “+” channels). Tabs: **Channels · DM** (team) and **AI** (per-project Ollama thread, separate storage key so histories never collide).
+* **Client persistence:** `localStorage` key `kanflow_team_chat_v1` — object map of **thread keys** → `ChatLine[]`:
+  * `c:{projectId}:{channelId}` — project channels (`general` plus any extra ids stored under `kanflow_team_channel_defs_v1` per project).
+  * `dm:{userA}:{userB}` — lexicographic pair id for 1:1 DMs (browser-local only; not a server contract yet).
+  * `ai:{projectId}` — AI tab transcript.
+* **Server-backed slice (today):** When `AppContext.apiOnline` is true and the user is on **`#general`**, the dock loads and appends via **`GET` / `POST` `/api/v1/projects/{project_id}/chat`** (Axum + MongoDB `chat_messages` in `mongo_store.rs`: `project_id`, `user_id`, `user_name`, `content`, `created_at`). If Mongo is disabled or the request fails, the same thread falls back to the local map above. **Extra channels** remain local-only until the API gains a `channel` / `thread_id` dimension (or Postgres channel tables like a classic team product).
+* **Future / reference architecture (not the current stack):** Multi-tenant products often add **Postgres** `channels` + `channel_members`, **Mongo** (or dedicated store) for message bodies, **Redis** for hot DM/channel caches, and **WebSocket** fan-out (see common Actix-style patterns). Kanflow intentionally stays on **Axum** and the existing Mongo route until product requirements justify that expansion.
 
 ---
 
@@ -356,6 +362,14 @@ AppContextType {
 * Environment: copy `.env.example` — `DATABASE_URL`, `MONGO_URI`, `MONGO_DB`, `KANFLOW_PORT`.
 * Health: `GET /health` — used in automated contract tests without live databases.
 * Postgres migrations: `20260427100001_project_members.sql` (`project_members` join table), `20260427120000_seed_demo.sql` (full demo dataset: users, projects, columns, five tasks, comment with fixed id, task dependency, time entry, team rows), and `20260427135000_seed_demo_backfill.sql` (idempotent gap-fill for DBs that ran an older seed). All UUIDs and timestamps align with `frontend/src/constants.ts`.
+
+#### Users API & Keycloak alignment
+
+* **`GET /api/v1/users`** — Lists Postgres `users` (id, name, email, role). Used to hydrate assignee pickers when the API is online.
+* **`POST /api/v1/users`** — Creates a user row (JSON body: `name`, `email`, optional `role`, default `member`). Requires a **Keycloak realm role** `admin` on the JWT (`realm_access.roles`). When Keycloak is not configured, contract tests attach a dev principal that includes `admin` so the route stays testable.
+* **Identity ↔ app user id:** Keycloak’s `sub` is not the Postgres UUID. For demo accounts whose **email** matches `MOCK_USERS` in `frontend/src/constants.ts` (`alex@example.com`, `sam@example.com`, `jordan@example.com`), `AuthProvider` maps the session to the **seed UUID** so assignees, comments, and notifications line up with the database.
+* **Realm import:** `keycloak/kanflow-realm.json` includes `admin`, `demo`, and the three seed users above (password **`kanflow`** for Alex/Sam/Jordan in dev; change in production). After changing the file, re-import or recreate the realm in Keycloak.
+* **Admin-created users:** Header **User** (admin only) opens a modal that inserts into Postgres. The operator must **create the same user in Keycloak** (matching email) so that person can sign in; the UI surfaces a reminder notification.
 
 ### AI
 

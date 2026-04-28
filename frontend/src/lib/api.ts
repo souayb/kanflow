@@ -39,6 +39,23 @@ export interface ApiComment {
   createdAt: number;
 }
 
+/** `mongo_store::list_chat` / `append_chat` (MISSION §5.11). */
+export interface ApiChatMessage {
+  id: string;
+  project_id: string;
+  user_id: string;
+  user_name: string;
+  content: string;
+  created_at: string;
+}
+
+export interface ApiUserRow {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+}
+
 export interface ApiTask {
   id: string;
   projectId: string;
@@ -93,6 +110,15 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
 // ── API surface ───────────────────────────────────────────────────────────────
 
 export const api = {
+  // Users (Postgres directory; POST requires Keycloak realm role `admin`)
+  getUsers: () => apiFetch<{ users: ApiUserRow[] }>('/api/v1/users'),
+
+  createUser: (body: { name: string; email: string; role?: string }) =>
+    apiFetch<{ user: ApiUserRow }>('/api/v1/users', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
   // Projects
   getProjects: () =>
     apiFetch<{ projects: ApiProject[] }>('/api/v1/projects'),
@@ -149,5 +175,15 @@ export const api = {
   addComment: (taskId: string, body: { user_id: string; user_name: string; content: string }) =>
     apiFetch<{ comment: ApiComment }>(`/api/v1/tasks/${taskId}/comments`, {
       method: 'POST', body: JSON.stringify(body),
+    }),
+
+  // Per-project team chat (#general) — Mongo when enabled; otherwise 503 from server
+  listProjectChat: (projectId: string) =>
+    apiFetch<{ messages: ApiChatMessage[] }>(`/api/v1/projects/${projectId}/chat`),
+
+  appendProjectChat: (projectId: string, body: { user_id: string; user_name: string; content: string }) =>
+    apiFetch<{ id: string; status: string }>(`/api/v1/projects/${projectId}/chat`, {
+      method: 'POST',
+      body: JSON.stringify(body),
     }),
 };

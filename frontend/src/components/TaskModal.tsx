@@ -24,8 +24,23 @@ interface TaskModalProps {
   onClose: () => void;
 }
 
+function buildAppliedDescriptionFromAi(r: TaskEnhancementResult): string {
+  const blocks: string[] = [r.enhancedDescription.trim()];
+  if (r.subtasks.length) {
+    blocks.push('', '### Subtasks', ...r.subtasks.map((s) => `- ${s}`));
+  }
+  if (r.potentialRisks.length) {
+    blocks.push('', '### Risks', ...r.potentialRisks.map((x) => `- ${x}`));
+  }
+  if (r.definitionOfDone.trim()) {
+    blocks.push('', '### Definition of done', r.definitionOfDone.trim());
+  }
+  return blocks.join('\n');
+}
+
 export default function TaskModal({ taskId, onClose }: TaskModalProps) {
-  const { tasks, users, projects, updateTask, deleteTask, addComment, addDependency, currentUser } = useApp();
+  const { tasks, users, projects, updateTask, deleteTask, addComment, addDependency, addNotification, currentUser } =
+    useApp();
   const task = tasks.find((t) => t.id === taskId);
   const [commentText, setCommentText] = useState('');
   const [isRefining, setIsRefining] = useState(false);
@@ -103,20 +118,37 @@ export default function TaskModal({ taskId, onClose }: TaskModalProps) {
   };
 
   const applyAIChange = () => {
-    if (!aiResult) return;
-    const thinking =
-      [aiResult.aiThinking, aiResult.definitionOfDone ? `### Definition of done\n${aiResult.definitionOfDone}` : '']
-        .filter(Boolean)
-        .join('\n\n');
+    if (!aiResult || !currentUser) return;
+    const description = buildAppliedDescriptionFromAi(aiResult);
+    const thinking = aiResult.aiThinking.trim();
     updateTask(taskId, {
       title: aiResult.enhancedTitle,
-      description: aiResult.enhancedDescription,
+      description,
       priority: aiResult.suggestedPriority,
       aiSuggested: true,
-      aiThinking: thinking,
+      aiThinking: thinking || undefined,
     });
+    const shortTitle =
+      aiResult.enhancedTitle.length > 56 ? `${aiResult.enhancedTitle.slice(0, 56)}…` : aiResult.enhancedTitle;
+    addNotification({
+      userId: currentUser.id,
+      title: 'AI suggestions applied',
+      message: `Updated title, full description (including subtasks, risks, and definition of done), priority, and AI notes on "${shortTitle}".`,
+      type: 'ai_insight',
+      relatedId: taskId,
+    });
+    if (task.assigneeId && task.assigneeId !== currentUser.id) {
+      addNotification({
+        userId: task.assigneeId,
+        title: 'Task refined with AI',
+        message: `${currentUser.name} applied AI suggestions to "${task.title}".`,
+        type: 'task_update',
+        relatedId: taskId,
+      });
+    }
     setAiResult(null);
     setAiError(null);
+    setActiveTab('details');
   };
 
   const commitNewTag = () => {

@@ -7,6 +7,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use axum::body::Body;
 use axum::extract::{Request, State};
 use axum::http::{header, StatusCode};
 use axum::middleware::Next;
@@ -35,6 +36,11 @@ struct JwksDoc {
 // ── Claims ────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
+pub struct RealmAccess {
+    pub roles: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct Claims {
     pub sub: String,
     pub iss: Option<String>,
@@ -42,6 +48,32 @@ pub struct Claims {
     pub preferred_username: Option<String>,
     pub email: Option<String>,
     pub name: Option<String>,
+    pub realm_access: Option<RealmAccess>,
+}
+
+/// Injected on every `/api/v1/*` request after JWT validation (or dev-open mode).
+#[derive(Clone, Debug)]
+pub struct KanflowAuth {
+    pub sub: String,
+    pub email: Option<String>,
+    pub name: Option<String>,
+    pub realm_roles: Vec<String>,
+}
+
+impl KanflowAuth {
+    /// Used when Keycloak is not configured: contract tests and local API without auth.
+    pub fn dev_open() -> Self {
+        Self {
+            sub: "dev-open".into(),
+            email: None,
+            name: Some("Dev".into()),
+            realm_roles: vec!["admin".into(), "member".into()],
+        }
+    }
+
+    pub fn is_admin(&self) -> bool {
+        self.realm_roles.iter().any(|r| r == "admin")
+    }
 }
 
 // ── Auth state (JWKS cache + config) ─────────────────────────────────────────
@@ -120,11 +152,12 @@ fn try_decode(token: &str, dk: &DecodingKey, issuer: &str) -> Result<Claims, ()>
 
 pub async fn require_auth(
     State(state): State<AppState>,
-    req: Request,
+    mut req: Request<Body>,
     next: Next,
 ) -> Response {
-    // Auth not configured (no KEYCLOAK_URL) — pass through (dev / contract tests)
+    // Auth not configured — attach dev identity so handlers can use Extension<KanflowAuth>.
     let Some(ref auth) = state.auth else {
+        req.extensions_mut().insert(KanflowAuth::dev_open());
         return next.run(req).await;
     };
 
@@ -139,7 +172,19 @@ pub async fn require_auth(
     };
 
     match validate_token(token, auth).await {
-        Ok(_claims) => next.run(req).await,
+        Ok(claims) => {
+            let realm_roles = claims
+                .realm_access
+                .and_then(|r| r.roles)
+                .unwrap_or_default();
+            req.extensions_mut().insert(KanflowAuth {
+                sub: claims.sub,
+                email: claims.email,
+                name: claims.name,
+                realm_roles,
+            });
+            next.run(req).await
+        }
         Err(()) => (StatusCode::UNAUTHORIZED, "invalid or expired token").into_response(),
     }
 }

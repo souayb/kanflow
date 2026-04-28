@@ -7,6 +7,7 @@ import React, { createContext, useContext, useEffect, useRef, useState } from 'r
 import { Kanban } from 'lucide-react';
 import keycloak from '../lib/keycloak';
 import { setTokenGetter } from '../lib/api';
+import { MOCK_USERS } from '../constants';
 import type { User } from '../types';
 
 // ── Auth context ──────────────────────────────────────────────────────────
@@ -29,14 +30,24 @@ export function useAuth(): AuthContextValue {
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
+/** Map Keycloak login to Postgres seed UUIDs when emails match `constants.ts` / demo migration. */
+function stableUserIdForEmail(email: string | undefined, fallbackSub: string): string {
+  if (!email?.trim()) return fallbackSub;
+  const e = email.trim().toLowerCase();
+  const row = MOCK_USERS.find((u) => u.email.toLowerCase() === e);
+  return row?.id ?? fallbackSub;
+}
+
 function kcUserFromToken(): User | null {
   const p = keycloak.tokenParsed as Record<string, any> | undefined;
   if (!p) return null;
   const roles: string[] = p['realm_access']?.roles ?? [];
+  const sub = (p['sub'] as string) ?? 'kc-user';
+  const email = (p['email'] as string) ?? '';
   return {
-    id: p['sub'] ?? 'kc-user',
-    name: p['name'] ?? p['preferred_username'] ?? 'User',
-    email: p['email'] ?? '',
+    id: stableUserIdForEmail(email, sub),
+    name: (p['name'] as string) ?? (p['preferred_username'] as string) ?? 'User',
+    email,
     role: roles.includes('admin') ? 'Admin' : 'Member',
   };
 }

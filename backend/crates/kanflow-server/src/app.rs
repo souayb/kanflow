@@ -1,5 +1,5 @@
 use axum::middleware;
-use axum::routing::{delete, get, patch, post, put};
+use axum::routing::{get, patch, post};
 use axum::Router;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
@@ -11,8 +11,11 @@ use crate::state::AppState;
 
 pub fn router(state: AppState) -> Router {
     // Protected API routes — wrapped with the auth middleware.
-    // When `state.auth` is None (no KC configured) the middleware is a no-op.
+    // When `state.auth` is None (no KC), middleware still attaches `KanflowAuth::dev_open()` for handlers.
     let api = Router::new()
+        // ── Users (directory + admin create) ─────────────────────────────
+        .route("/api/v1/users", get(handlers::list_users).post(handlers::create_user))
+
         // ── Projects ──────────────────────────────────────────────────────
         .route("/api/v1/projects",     get(handlers::list_projects).post(handlers::create_project))
         .route("/api/v1/projects/{project_id}",
