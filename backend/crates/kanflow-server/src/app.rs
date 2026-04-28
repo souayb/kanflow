@@ -1,17 +1,18 @@
+use axum::middleware;
 use axum::routing::{delete, get, patch, post, put};
 use axum::Router;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 
+use crate::auth::require_auth;
 use crate::handlers;
 use crate::mongo_store;
 use crate::state::AppState;
 
 pub fn router(state: AppState) -> Router {
-    Router::new()
-        // ── Liveness ──────────────────────────────────────────────────────
-        .route("/health", get(handlers::health))
-
+    // Protected API routes — wrapped with the auth middleware.
+    // When `state.auth` is None (no KC configured) the middleware is a no-op.
+    let api = Router::new()
         // ── Projects ──────────────────────────────────────────────────────
         .route("/api/v1/projects",     get(handlers::list_projects).post(handlers::create_project))
         .route("/api/v1/projects/{project_id}",
@@ -38,12 +39,17 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/config", get(mongo_store::get_config).put(mongo_store::put_config))
         .route("/api/v1/blobs",  post(mongo_store::post_blob))
 
+        .route_layer(middleware::from_fn_with_state(state.clone(), require_auth));
+
+    Router::new()
+        .route("/health", get(handlers::health))
+        .merge(api)
         .layer(CorsLayer::new().allow_origin(Any).allow_methods(Any).allow_headers(Any))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
 
-/// Test router with no databases wired (MISSION §14 — deterministic contract tests).
+/// Test router with no databases and no auth (MISSION §14 — deterministic contract tests).
 pub fn router_for_test() -> Router {
-    router(AppState::new(None, None))
+    router(AppState::new(None, None, None))
 }

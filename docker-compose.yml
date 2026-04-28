@@ -32,6 +32,62 @@ services:
       retries: 10
       start_period: 15s
 
+  # ── Identity provider (Keycloak) ─────────────────────────────────────────────
+  # Realm + clients + demo users are imported from keycloak/kanflow-realm.json.
+  # Admin console: http://localhost:8180  (admin / admin)
+  # Pre-created users:  demo / demo   and   admin / admin
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0
+    # start-dev disables SSL enforcement at the server level.
+    # --import-realm imports kanflow-realm.json (which sets sslRequired=none).
+    # No named volume → KC uses a fresh embedded H2 on every fresh start,
+    # guaranteeing the realm is always imported from the JSON file.
+    #
+    # KC_PROXY_HEADERS=xforwarded: Cloudflare (and nginx) terminate SSL and forward
+    # X-Forwarded-Proto: https to KC.  Without this, KC sees plain HTTP from the
+    # proxy IP and rejects it with "ssl_required" on the master realm.
+    command: start-dev --import-realm --http-port=8180
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_HTTP_PORT: "8180"
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_STRICT_HTTPS: "false"
+      # Trust X-Forwarded-Proto / X-Forwarded-For from Cloudflare / any reverse proxy.
+      # Use "forwarded" instead if your proxy sends RFC 7239 Forwarded headers.
+      KC_PROXY_HEADERS: "xforwarded"
+      KC_LOG_LEVEL: warn
+    ports:
+      - "8180:8180"
+    volumes:
+      - ./keycloak/kanflow-realm.json:/opt/keycloak/data/import/kanflow-realm.json:ro
+      # No named volume: ephemeral H2 means the realm JSON is always reimported,
+      # preventing a stale realm with sslRequired=external/all from surviving restarts.
+    healthcheck:
+      test: ["CMD-SHELL", "true"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 90s
+
+  # One-shot: master realm defaults to sslRequired=external → "HTTPS required" on HTTP.
+  # Patches master + kanflow via Admin CLI after KC is up (see keycloak/bootstrap-master-ssl.sh).
+  keycloak-ssl-bootstrap:
+    image: quay.io/keycloak/keycloak:25.0
+    depends_on:
+      keycloak:
+        condition: service_started
+    environment:
+      KC_SERVER: http://keycloak:8180
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+    volumes:
+      - ./keycloak/bootstrap-master-ssl.sh:/tmp/bootstrap-master-ssl.sh:ro
+    entrypoint: ["/bin/bash", "/tmp/bootstrap-master-ssl.sh"]
+    restart: "no"
+
   # ── Local LLM (Ollama) ───────────────────────────────────────────────────────
 
   ollama:
@@ -83,15 +139,23 @@ services:
       MONGO_DB: kanflow
       KANFLOW_HOST: 0.0.0.0
       KANFLOW_PORT: "8080"
+      # Keycloak — use the internal Docker hostname
+      KEYCLOAK_URL: http://keycloak:8180
+      KEYCLOAK_REALM: kanflow
     depends_on:
       postgres:
         condition: service_healthy
       mongo:
         condition: service_healthy
+      keycloak:
+        condition: service_started
+      keycloak-ssl-bootstrap:
+        condition: service_completed_successfully
     restart: on-failure
 
   # ── React frontend (Vite build → Nginx) ──────────────────────────────────────
   # Browser uses same-origin `/ollama` → nginx proxies to the ollama service (no CORS).
+  # Keycloak URL must be reachable from the *browser*, so use the host port (8180).
 
   frontend:
     build:
@@ -100,11 +164,20 @@ services:
       args:
         VITE_OLLAMA_URL: "/ollama"
         VITE_OLLAMA_MODEL: "${OLLAMA_MODEL:-llama3.2}"
+        VITE_KEYCLOAK_URL: "${KEYCLOAK_PUBLIC_URL:-http://localhost:8180}"
+        VITE_KEYCLOAK_REALM: "kanflow"
+        VITE_KEYCLOAK_CLIENT_ID: "kanflow-frontend"
     ports:
       - "3000:80"
     depends_on:
-      - backend
-      - ollama
+      backend:
+        condition: service_started
+      ollama:
+        condition: service_started
+      keycloak:
+        condition: service_started
+      keycloak-ssl-bootstrap:
+        condition: service_completed_successfully
     restart: on-failure
 
 volumes:

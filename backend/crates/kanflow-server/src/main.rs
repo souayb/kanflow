@@ -1,6 +1,7 @@
 //! Kanflow API server entrypoint.
 
 use anyhow::Context;
+use kanflow_server::auth::{fetch_and_cache_jwks, AuthConfig};
 use kanflow_server::config::ServerConfig;
 use kanflow_server::router;
 use kanflow_server::state::AppState;
@@ -44,7 +45,21 @@ async fn main() -> anyhow::Result<()> {
         None
     };
 
-    let state = AppState::new(pg, mongo);
+    // ── Keycloak JWT auth ──────────────────────────────────────────────────
+    let auth = if let (Some(jwks_url), Some(issuer)) = (cfg.jwks_url(), cfg.token_issuer()) {
+        tracing::info!(%jwks_url, "Keycloak auth enabled");
+        let ac = AuthConfig::new(jwks_url, issuer);
+        // Pre-warm JWKS cache; warn (don't crash) if KC is not yet reachable
+        if let Err(e) = fetch_and_cache_jwks(&ac).await {
+            tracing::warn!("Could not pre-fetch JWKS (KC may still be starting): {e}");
+        }
+        Some(ac)
+    } else {
+        tracing::warn!("KEYCLOAK_URL / KEYCLOAK_REALM not set — auth disabled (all requests permitted)");
+        None
+    };
+
+    let state = AppState::new(pg, mongo, auth);
     let app = router(state);
 
     let addr = format!("{}:{}", cfg.host, cfg.port);

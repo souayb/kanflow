@@ -5,6 +5,14 @@
 
 const BASE: string = (import.meta as any).env?.VITE_API_URL ?? 'http://localhost:8080';
 
+// ── Auth token getter (set by AuthProvider once Keycloak initialises) ─────────
+
+let _getToken: (() => string | undefined) | null = null;
+
+export function setTokenGetter(fn: () => string | undefined): void {
+  _getToken = fn;
+}
+
 // ── Shared types ──────────────────────────────────────────────────────────────
 
 export interface ApiProject {
@@ -67,8 +75,13 @@ export function buildTaskPatchBody(updates: Partial<ApiTask>): Record<string, un
 // ── Fetch helper ──────────────────────────────────────────────────────────────
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = _getToken?.();
   const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...init?.headers },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...init?.headers,
+    },
     ...init,
   });
   if (res.status === 204) return undefined as T;

@@ -143,7 +143,7 @@ function loadCachedState() {
 
 // ── Provider ───────────────────────────────────────────────────────────────
 
-export function AppProvider({ children }: { children: React.ReactNode }) {
+export function AppProvider({ children, kcUser }: { children: React.ReactNode; kcUser?: User | null }) {
   const initial = loadCachedState();
   const [projects, setProjects] = useState<Project[]>(initial.projects);
   const [tasks, setTasks] = useState<Task[]>(initial.tasks);
@@ -154,8 +154,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [dashboardWidgets, setDashboardWidgets] = useState<DashboardWidget[]>(initial.dashboardWidgets);
   const [activeTimer, setActiveTimer] = useState<{ taskId: string; startTime: number } | null>(null);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(initial.activeProjectId);
-  const [currentUser, setCurrentUser] = useState<User | null>(initial.currentUser);
+  // Prefer the Keycloak-authenticated user; fall back to localStorage/mock
+  const [currentUser, setCurrentUser] = useState<User | null>(kcUser ?? initial.currentUser);
   const [apiOnline, setApiOnline] = useState(false);
+
+  // Sync kcUser into currentUser whenever it changes (e.g. after token refresh)
+  useEffect(() => {
+    if (kcUser) setCurrentUser(kcUser);
+  }, [kcUser]);
 
   // ── Bootstrap from API ───────────────────────────────────────────────────
   useEffect(() => {

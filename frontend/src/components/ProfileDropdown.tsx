@@ -9,12 +9,14 @@ import {
   ChevronDown,
 } from 'lucide-react';
 import { useApp } from '../AppContext';
+import { useAuth } from './AuthProvider';
 import { cn } from '../lib/utils';
 import Avatar from './Avatar';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export default function ProfileDropdown() {
   const { currentUser, updateUser } = useApp();
+  const { logout } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
 
@@ -84,7 +86,7 @@ export default function ProfileDropdown() {
                     <MenuButton
                       icon={<LogOut size={14} />}
                       label="Sign out"
-                      onClick={() => setIsOpen(false)}
+                      onClick={() => { setIsOpen(false); logout(); }}
                       className="text-kf-error hover:bg-[rgba(255,123,145,0.12)]"
                     />
                   </div>

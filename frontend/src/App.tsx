@@ -4,6 +4,7 @@
  */
 
 import React from 'react';
+import { AuthProvider, useAuth } from './components/AuthProvider';
 import { AppProvider } from './AppContext';
 import Layout from './components/Layout';
 import { useApp } from './AppContext';
@@ -15,7 +16,7 @@ import TimeKeepingView from './components/TimeKeepingView';
 
 function AppContent() {
   const [currentView, setCurrentView] = React.useState<'dashboard' | 'kanban' | 'reporting' | 'todos' | 'time'>('kanban');
-  
+
   return (
     <Layout currentView={currentView} onViewChange={setCurrentView}>
       {currentView === 'dashboard' && <DashboardView />}
@@ -27,10 +28,19 @@ function AppContent() {
   );
 }
 
-export default function App() {
+function AuthenticatedApp() {
+  const { kcUser } = useAuth();
   return (
-    <AppProvider>
+    <AppProvider kcUser={kcUser}>
       <AppContent />
     </AppProvider>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AuthenticatedApp />
+    </AuthProvider>
   );
 }
