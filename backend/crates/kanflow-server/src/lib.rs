@@ -7,6 +7,7 @@
 pub mod app;
 pub mod auth;
 pub mod config;
+pub mod github;
 pub mod handlers;
 pub mod mongo_store;
 pub mod state;

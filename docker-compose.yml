@@ -142,6 +142,14 @@ services:
       # Keycloak — use the internal Docker hostname
       KEYCLOAK_URL: http://keycloak:8180
       KEYCLOAK_REALM: kanflow
+      # GitHub one-way sync (optional). Set these in a local .env file — see .env.example.
+      # When token+owner+repo are all present, creating a task opens a GitHub Issue
+      # and (if GITHUB_PROJECT_NUMBER is set) adds it to that Projects v2 board.
+      GITHUB_TOKEN: "${GITHUB_TOKEN:-}"
+      GITHUB_OWNER: "${GITHUB_OWNER:-}"
+      GITHUB_REPO: "${GITHUB_REPO:-}"
+      GITHUB_PROJECT_NUMBER: "${GITHUB_PROJECT_NUMBER:-}"
+      GITHUB_OWNER_IS_ORG: "${GITHUB_OWNER_IS_ORG:-false}"
     depends_on:
       postgres:
         condition: service_healthy

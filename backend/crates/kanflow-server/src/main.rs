@@ -3,6 +3,7 @@
 use anyhow::Context;
 use kanflow_server::auth::{fetch_and_cache_jwks, AuthConfig};
 use kanflow_server::config::ServerConfig;
+use kanflow_server::github::GithubClient;
 use kanflow_server::router;
 use kanflow_server::state::AppState;
 use mongodb::options::ClientOptions;
@@ -59,7 +60,20 @@ async fn main() -> anyhow::Result<()> {
         None
     };
 
-    let state = AppState::new(pg, mongo, auth);
+    // ── GitHub one-way sync (optional) ─────────────────────────────────────
+    let github = match cfg.github.clone() {
+        Some(gh) => {
+            let client = GithubClient::new(gh);
+            tracing::info!(repo = %client.slug(), "GitHub sync enabled");
+            Some(client)
+        }
+        None => {
+            tracing::info!("GITHUB_TOKEN/OWNER/REPO not set — GitHub sync disabled");
+            None
+        }
+    };
+
+    let state = AppState::new(pg, mongo, auth).with_github(github);
     let app = router(state);
 
     let addr = format!("{}:{}", cfg.host, cfg.port);
