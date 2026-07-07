@@ -30,6 +30,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { type DashboardChartWindowDays, type Task } from '../types';
 import Avatar from './Avatar';
 import { motion, AnimatePresence } from 'framer-motion';
 import DashboardCustomizer from './DashboardCustomizer';
@@ -113,8 +114,31 @@ function KanflowAiInsightCard() {
   );
 }
 
+function buildThroughputSeries(projectTasks: Task[], doneColumnId: string | null, days: DashboardChartWindowDays) {
+  const rows: { name: string; completed: number; added: number }[] = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - i);
+    const start = d.getTime();
+    const end = start + 24 * 60 * 60 * 1000 - 1;
+    const label =
+      days <= 7
+        ? d.toLocaleDateString(undefined, { weekday: 'short' })
+        : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    let completed = 0;
+    let added = 0;
+    for (const t of projectTasks) {
+      if (t.createdAt >= start && t.createdAt <= end) added += 1;
+      if (doneColumnId && t.status === doneColumnId && t.updatedAt >= start && t.updatedAt <= end) completed += 1;
+    }
+    rows.push({ name: label, completed, added });
+  }
+  return rows;
+}
+
 export default function DashboardView() {
-  const { tasks, projects, activeProjectId, dashboardWidgets } = useApp();
+  const { tasks, projects, activeProjectId, dashboardWidgets, dashboardChartDays, setDashboardChartDays } = useApp();
   const [isCustomizing, setIsCustomizing] = useState(false);
 
   const activeProject = projects.find((p) => p.id === activeProjectId);
@@ -169,15 +193,10 @@ export default function DashboardView() {
     ];
   }, [projectTasks, doneColumnId, inProgressId]);
 
-  const activityData = [
-    { name: 'Mon', completed: 4, added: 2 },
-    { name: 'Tue', completed: 3, added: 5 },
-    { name: 'Wed', completed: 6, added: 3 },
-    { name: 'Thu', completed: 8, added: 4 },
-    { name: 'Fri', completed: 5, added: 7 },
-    { name: 'Sat', completed: 2, added: 1 },
-    { name: 'Sun', completed: 1, added: 0 },
-  ];
+  const activityData = useMemo(
+    () => buildThroughputSeries(projectTasks, doneColumnId, dashboardChartDays),
+    [projectTasks, doneColumnId, dashboardChartDays],
+  );
 
   const statusDistribution = columnsSorted.map((c, i) => ({
     name: c.title,
@@ -203,9 +222,21 @@ export default function DashboardView() {
             <Settings size={16} strokeWidth={1.75} />
             Customize widgets
           </button>
-          <div className="inline-flex items-center gap-2 text-sm text-kf-slate kf-card px-4 py-2.5">
-            <Calendar size={16} className="text-kf-meta-blue" strokeWidth={1.75} />
-            Last 7 days
+          <div className="inline-flex items-center gap-2 text-sm text-kf-slate kf-card px-3 py-2">
+            <Calendar size={16} className="text-kf-meta-blue shrink-0" strokeWidth={1.75} />
+            <label htmlFor="dash-chart-days" className="sr-only">
+              Chart time range
+            </label>
+            <select
+              id="dash-chart-days"
+              className="kf-input text-xs py-1.5 pr-8 font-medium bg-transparent border-0 focus:ring-0 cursor-pointer"
+              value={dashboardChartDays}
+              onChange={(e) => setDashboardChartDays(Number(e.target.value) as DashboardChartWindowDays)}
+            >
+              <option value={7}>Last 7 days</option>
+              <option value={14}>Last 14 days</option>
+              <option value={30}>Last 30 days</option>
+            </select>
           </div>
         </div>
       </div>

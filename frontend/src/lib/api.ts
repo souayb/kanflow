@@ -5,6 +5,14 @@
 
 const BASE: string = (import.meta as any).env?.VITE_API_URL ?? 'http://localhost:8080';
 
+// ── Auth token getter (set by AuthProvider once Keycloak initialises) ─────────
+
+let _getToken: (() => string | undefined) | null = null;
+
+export function setTokenGetter(fn: () => string | undefined): void {
+  _getToken = fn;
+}
+
 // ── Shared types ──────────────────────────────────────────────────────────────
 
 export interface ApiProject {
@@ -29,6 +37,23 @@ export interface ApiComment {
   userName: string;
   content: string;
   createdAt: number;
+}
+
+/** `mongo_store::list_chat` / `append_chat` (MISSION §5.11). */
+export interface ApiChatMessage {
+  id: string;
+  project_id: string;
+  user_id: string;
+  user_name: string;
+  content: string;
+  created_at: string;
+}
+
+export interface ApiUserRow {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
 }
 
 export interface ApiTask {
@@ -67,8 +92,13 @@ export function buildTaskPatchBody(updates: Partial<ApiTask>): Record<string, un
 // ── Fetch helper ──────────────────────────────────────────────────────────────
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = _getToken?.();
   const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...init?.headers },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...init?.headers,
+    },
     ...init,
   });
   if (res.status === 204) return undefined as T;
@@ -80,6 +110,15 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
 // ── API surface ───────────────────────────────────────────────────────────────
 
 export const api = {
+  // Users (Postgres directory; POST requires Keycloak realm role `admin`)
+  getUsers: () => apiFetch<{ users: ApiUserRow[] }>('/api/v1/users'),
+
+  createUser: (body: { name: string; email: string; role?: string }) =>
+    apiFetch<{ user: ApiUserRow }>('/api/v1/users', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
   // Projects
   getProjects: () =>
     apiFetch<{ projects: ApiProject[] }>('/api/v1/projects'),
@@ -136,5 +175,15 @@ export const api = {
   addComment: (taskId: string, body: { user_id: string; user_name: string; content: string }) =>
     apiFetch<{ comment: ApiComment }>(`/api/v1/tasks/${taskId}/comments`, {
       method: 'POST', body: JSON.stringify(body),
+    }),
+
+  // Per-project team chat (#general) — Mongo when enabled; otherwise 503 from server
+  listProjectChat: (projectId: string) =>
+    apiFetch<{ messages: ApiChatMessage[] }>(`/api/v1/projects/${projectId}/chat`),
+
+  appendProjectChat: (projectId: string, body: { user_id: string; user_name: string; content: string }) =>
+    apiFetch<{ id: string; status: string }>(`/api/v1/projects/${projectId}/chat`, {
+      method: 'POST',
+      body: JSON.stringify(body),
     }),
 };

@@ -1,0 +1,27 @@
+{
+  "expo": {
+    "name": "Kanflow",
+    "slug": "kanflow-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "scheme": "kanflow",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.kanflow.mobile"
+    },
+    "android": {
+      "package": "com.kanflow.mobile"
+    },
+    "extra": {
+      "apiUrl": "http://localhost:8080",
+      "keycloakUrl": "http://localhost:8180",
+      "keycloakRealm": "kanflow",
+      "keycloakClientId": "kanflow-mobile"
+    },
+    "plugins": [
+      "expo-asset"
+    ]
+  }
+}

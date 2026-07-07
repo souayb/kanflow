@@ -71,7 +71,25 @@ docker compose up --build
 #   Frontend  →  http://localhost:3000
 #   API       →  http://localhost:8080
 #   Ollama    →  http://localhost:11434
+#   Keycloak  →  http://localhost:8180  (admin console; app uses realm "kanflow")
 ```
+
+### Development credentials (Keycloak)
+
+Use **different** accounts for the Keycloak **admin console** (`master` realm) vs signing into the **Kanflow app** (`kanflow` realm).
+
+| What | URL | Realm | Username | Password | Notes |
+|------|-----|-------|----------|----------|--------|
+| **Keycloak admin UI** | [http://localhost:8180](http://localhost:8180) | `master` | `admin` | `admin` | Manage realms, clients, users — set in `docker-compose.yml` (`KEYCLOAK_ADMIN` / `KEYCLOAK_ADMIN_PASSWORD`). |
+| **Kanflow app login** | [http://localhost:3000](http://localhost:3000) | `kanflow` | `demo` | `demo` | Normal user (`member` role), imported from `keycloak/kanflow-realm.json`. |
+| **Kanflow app login** | [http://localhost:3000](http://localhost:3000) | `kanflow` | `admin` | `admin` | Elevated user (`admin` + `member` roles), same file — **not** the same account as Keycloak’s `master` admin unless you choose the same password by coincidence. |
+| **Kanflow app login** | [http://localhost:3000](http://localhost:3000) | `kanflow` | `alex` | `kanflow` | Matches Postgres seed user Alex (`alex@example.com`); app id maps to seed UUID. |
+| **Kanflow app login** | [http://localhost:3000](http://localhost:3000) | `kanflow` | `sam` | `kanflow` | Seed user Sam (`sam@example.com`). |
+| **Kanflow app login** | [http://localhost:3000](http://localhost:3000) | `kanflow` | `jordan` | `kanflow` | Seed user Jordan (`jordan@example.com`). |
+
+**Summary:** open the app at `:3000` and sign in with **`demo` / `demo`**, **`admin` / `admin`**, or **`alex` / `kanflow`** (same password for **sam** / **jordan**) in the **`kanflow`** realm. Use **`admin` / `admin`** on **`http://localhost:8180`** only for the **Keycloak** console (`master` realm).
+
+These values are for **local development only**; change them for any shared or production deployment.
 
 On subsequent starts (images already built):
 ```bash
@@ -304,7 +322,7 @@ kanban/
             ├── ReportingView.tsx
             ├── PersonalTodoView.tsx
             ├── TimeKeepingView.tsx
-            ├── ChatComponent.tsx   # Per-project chat + Ollama AI replies
+            ├── TeamChatDock.tsx    # Channels, DMs, Kanflow AI (localStorage)
             ├── ProfileDropdown.tsx
             ├── DashboardCustomizer.tsx
             └── Avatar.tsx          # Offline initials avatar

@@ -5,7 +5,9 @@
 //! - HTTP: `router_for_test()` — `GET /health` and shape of JSON responses.
 
 pub mod app;
+pub mod auth;
 pub mod config;
+pub mod github;
 pub mod handlers;
 pub mod mongo_store;
 pub mod state;

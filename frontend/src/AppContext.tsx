@@ -1,8 +1,21 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { type Project, type Task, type Column, type User, type Notification, type PersonalTodo, type TimeEntry, type DashboardWidget, type Comment } from './types';
+import {
+  type Project,
+  type Task,
+  type Column,
+  type User,
+  type Notification,
+  type PersonalTodo,
+  type TimeEntry,
+  type DashboardWidget,
+  type Comment,
+  type IntegrationSettings,
+  type DashboardChartWindowDays,
+  DEFAULT_INTEGRATION_SETTINGS,
+} from './types';
 import { MOCK_PROJECTS, MOCK_TASKS, MOCK_USERS, MOCK_USER_ALEX } from './constants';
 import { KANFLOW_KEYS, migrateZenithToKanflow, readStoredJson, writeStoredJson } from './lib/storage';
-import { api, type ApiTask, type ApiProject, type ApiColumn } from './lib/api';
+import { api, type ApiTask, type ApiProject, type ApiColumn, type ApiUserRow } from './lib/api';
 
 interface AppContextType {
   projects: Project[];
@@ -31,6 +44,8 @@ interface AppContextType {
   getTimeEntriesForTask: (taskId: string) => TimeEntry[];
   updateDashboardWidgets: (widgets: DashboardWidget[]) => void;
   updateUser: (updates: Partial<User>) => void;
+  /** Inserts into Postgres (admin realm role) and refreshes the in-memory user directory. */
+  createUserAdmin: (body: { name: string; email: string; role?: string }) => Promise<ApiUserRow>;
   activeTimer: { taskId: string; startTime: number } | null;
   currentUser: User | null;
   addProject: (name: string, description: string) => Promise<void>;
@@ -38,6 +53,20 @@ interface AppContextType {
   deleteProject: (id: string) => void;
   addProjectTeamMember: (projectId: string, userId: string) => void;
   removeProjectTeamMember: (projectId: string, userId: string) => void;
+  /** Header search — filters tasks across projects in the layout dropdown. */
+  globalSearchQuery: string;
+  setGlobalSearchQuery: (q: string) => void;
+  /** Switch to Board and open the task modal for this task id. */
+  openTaskOnBoard: (taskId: string) => void;
+  /** Clears the pending task id after Kanban has opened the modal. */
+  clearPendingOpenTask: () => void;
+  /** Increments when navigation to board is requested (App listens to switch view). */
+  boardNavSeq: number;
+  pendingOpenTaskId: string | null;
+  integrationSettings: IntegrationSettings;
+  setIntegrationSettings: (patch: Partial<IntegrationSettings> | ((prev: IntegrationSettings) => IntegrationSettings)) => void;
+  dashboardChartDays: DashboardChartWindowDays;
+  setDashboardChartDays: (d: DashboardChartWindowDays) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -113,6 +142,8 @@ function loadCachedState() {
       dashboardWidgets: DEFAULT_WIDGETS,
       activeProjectId: MOCK_PROJECTS[0]?.id ?? null,
       currentUser: MOCK_USERS[0] ?? null,
+      integrationSettings: DEFAULT_INTEGRATION_SETTINGS,
+      dashboardChartDays: 7 as DashboardChartWindowDays,
     };
   }
 
@@ -138,32 +169,80 @@ function loadCachedState() {
     activeProjectId = projects[0]?.id ?? null;
   }
 
-  return { projects, tasks, notifications, personalTodos, timeEntries, dashboardWidgets, activeProjectId, currentUser };
+  const integrations =
+    readStoredJson<IntegrationSettings>(KANFLOW_KEYS.integrations) ?? DEFAULT_INTEGRATION_SETTINGS;
+  const mergedIntegrations: IntegrationSettings = {
+    ...DEFAULT_INTEGRATION_SETTINGS,
+    ...integrations,
+    github: { ...DEFAULT_INTEGRATION_SETTINGS.github, ...integrations.github },
+  };
+
+  const rawDays = localStorage.getItem(KANFLOW_KEYS.dashboardChartDays);
+  const dashboardChartDays: DashboardChartWindowDays =
+    rawDays === '14' || rawDays === '30' ? (Number(rawDays) as DashboardChartWindowDays) : 7;
+
+  return {
+    projects,
+    tasks,
+    notifications,
+    personalTodos,
+    timeEntries,
+    dashboardWidgets,
+    activeProjectId,
+    currentUser,
+    integrationSettings: mergedIntegrations,
+    dashboardChartDays,
+  };
 }
 
 // ── Provider ───────────────────────────────────────────────────────────────
 
-export function AppProvider({ children }: { children: React.ReactNode }) {
+export function AppProvider({ children, kcUser }: { children: React.ReactNode; kcUser?: User | null }) {
   const initial = loadCachedState();
   const [projects, setProjects] = useState<Project[]>(initial.projects);
   const [tasks, setTasks] = useState<Task[]>(initial.tasks);
-  const [users] = useState<User[]>(MOCK_USERS);
+  const [users, setUsers] = useState<User[]>(MOCK_USERS);
   const [notifications, setNotifications] = useState<Notification[]>(initial.notifications);
   const [personalTodos, setPersonalTodos] = useState<PersonalTodo[]>(initial.personalTodos);
   const [timeEntries, setTimeEntries] = useState<TimeEntry[]>(initial.timeEntries);
   const [dashboardWidgets, setDashboardWidgets] = useState<DashboardWidget[]>(initial.dashboardWidgets);
   const [activeTimer, setActiveTimer] = useState<{ taskId: string; startTime: number } | null>(null);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(initial.activeProjectId);
-  const [currentUser, setCurrentUser] = useState<User | null>(initial.currentUser);
+  // Prefer the Keycloak-authenticated user; fall back to localStorage/mock
+  const [currentUser, setCurrentUser] = useState<User | null>(kcUser ?? initial.currentUser);
   const [apiOnline, setApiOnline] = useState(false);
+  const [globalSearchQuery, setGlobalSearchQuery] = useState('');
+  const [pendingOpenTaskId, setPendingOpenTaskId] = useState<string | null>(null);
+  const [boardNavSeq, setBoardNavSeq] = useState(0);
+  const [integrationSettings, setIntegrationSettingsState] = useState<IntegrationSettings>(initial.integrationSettings);
+  const [dashboardChartDays, setDashboardChartDaysState] = useState<DashboardChartWindowDays>(initial.dashboardChartDays);
+
+  // Sync kcUser into currentUser whenever it changes (e.g. after token refresh)
+  useEffect(() => {
+    if (kcUser) setCurrentUser(kcUser);
+  }, [kcUser]);
 
   // ── Bootstrap from API ───────────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const { projects: apiProjects } = await api.getProjects();
+        const [{ projects: apiProjects }, usersRes] = await Promise.all([
+          api.getProjects(),
+          api.getUsers().catch(() => ({ users: [] as ApiUserRow[] })),
+        ]);
         if (cancelled) return;
+
+        if (usersRes.users.length > 0) {
+          setUsers(
+            usersRes.users.map((u) => ({
+              id: u.id,
+              name: u.name,
+              email: u.email,
+              role: u.role,
+            })),
+          );
+        }
 
         const hydratedProjects: Project[] = await Promise.all(
           apiProjects.map(async (p) => {
@@ -564,8 +643,62 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     );
   }, []);
 
+  const clearPendingOpenTask = useCallback(() => {
+    setPendingOpenTaskId(null);
+  }, []);
+
+  const openTaskOnBoard = useCallback(
+    (taskId: string) => {
+      const t = tasks.find((x) => x.id === taskId);
+      if (!t) return;
+      setActiveProjectId(t.projectId);
+      setPendingOpenTaskId(taskId);
+      setBoardNavSeq((s) => s + 1);
+    },
+    [tasks],
+  );
+
+  const setIntegrationSettings = useCallback(
+    (patch: Partial<IntegrationSettings> | ((prev: IntegrationSettings) => IntegrationSettings)) => {
+      setIntegrationSettingsState((prev) => {
+        if (typeof patch === 'function') return patch(prev);
+        return {
+          ...prev,
+          ...patch,
+          github: { ...prev.github, ...(patch.github ?? {}) },
+        };
+      });
+    },
+    [],
+  );
+
+  const setDashboardChartDays = useCallback((d: DashboardChartWindowDays) => {
+    setDashboardChartDaysState(d);
+  }, []);
+
+  useEffect(() => {
+    writeStoredJson(KANFLOW_KEYS.integrations, integrationSettings);
+  }, [integrationSettings]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(KANFLOW_KEYS.dashboardChartDays, String(dashboardChartDays));
+    } catch {
+      /* ignore */
+    }
+  }, [dashboardChartDays]);
+
   const updateUser = useCallback((updates: Partial<User>) => {
     setCurrentUser((prev) => (prev ? { ...prev, ...updates } : null));
+  }, []);
+
+  const createUserAdmin = useCallback(async (body: { name: string; email: string; role?: string }) => {
+    const { user } = await api.createUser(body);
+    setUsers((prev) => {
+      const filtered = prev.filter((u) => u.email.toLowerCase() !== user.email.toLowerCase());
+      return [...filtered, { id: user.id, name: user.name, email: user.email, role: user.role }];
+    });
+    return user;
   }, []);
 
   return (
@@ -597,6 +730,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         getTimeEntriesForTask,
         updateDashboardWidgets,
         updateUser,
+        createUserAdmin,
         activeTimer,
         currentUser,
         addProject,
@@ -604,6 +738,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         deleteProject,
         addProjectTeamMember,
         removeProjectTeamMember,
+        globalSearchQuery,
+        setGlobalSearchQuery,
+        openTaskOnBoard,
+        clearPendingOpenTask,
+        boardNavSeq,
+        pendingOpenTaskId,
+        integrationSettings,
+        setIntegrationSettings,
+        dashboardChartDays,
+        setDashboardChartDays,
       }}
     >
       {children}

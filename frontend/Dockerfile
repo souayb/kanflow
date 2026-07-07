@@ -12,13 +12,17 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Ollama URL/model are read at runtime via import.meta.env (VITE_* vars).
-# Pass them as build args so Vite can inline them into the static bundle.
-# Compose overrides with `/ollama` so nginx can proxy to the ollama service.
+# Vite inlines VITE_* variables into the static bundle at build time.
 ARG VITE_OLLAMA_URL="/ollama"
 ARG VITE_OLLAMA_MODEL="llama3.2"
+ARG VITE_KEYCLOAK_URL="http://localhost:8180"
+ARG VITE_KEYCLOAK_REALM="kanflow"
+ARG VITE_KEYCLOAK_CLIENT_ID="kanflow-frontend"
 ENV VITE_OLLAMA_URL=$VITE_OLLAMA_URL
 ENV VITE_OLLAMA_MODEL=$VITE_OLLAMA_MODEL
+ENV VITE_KEYCLOAK_URL=$VITE_KEYCLOAK_URL
+ENV VITE_KEYCLOAK_REALM=$VITE_KEYCLOAK_REALM
+ENV VITE_KEYCLOAK_CLIENT_ID=$VITE_KEYCLOAK_CLIENT_ID
 
 RUN npm run build
 

@@ -48,6 +48,21 @@ async fn health_ok() {
     assert_eq!(body["status"], "ok");
 }
 
+// ── users ─────────────────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn list_users_no_pg_returns_503() {
+    let (status, _) = get("/api/v1/users").await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+}
+
+#[tokio::test]
+async fn create_user_no_pg_returns_503() {
+    let body = r#"{"name":"Pat","email":"pat@example.com","role":"member"}"#;
+    let (status, _) = post("/api/v1/users", body).await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+}
+
 // ── projects ─────────────────────────────────────────────────────────────────
 
 #[tokio::test]

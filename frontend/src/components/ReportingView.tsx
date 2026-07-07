@@ -18,7 +18,7 @@ import Avatar from './Avatar';
 import { motion } from 'framer-motion';
 
 export default function ReportingView() {
-  const { tasks, users, activeProjectId, projects } = useApp();
+  const { tasks, users, activeProjectId, projects, globalSearchQuery } = useApp();
 
   const activeProject = projects.find((p) => p.id === activeProjectId);
   const columnsSorted = useMemo(
@@ -27,7 +27,14 @@ export default function ReportingView() {
   );
   const doneColumnId = columnsSorted.length ? columnsSorted[columnsSorted.length - 1].id : null;
 
-  const projectTasks = tasks.filter((t) => t.projectId === activeProjectId);
+  const projectTasks = useMemo(() => {
+    const base = tasks.filter((t) => t.projectId === activeProjectId);
+    const q = globalSearchQuery.trim().toLowerCase();
+    if (!q) return base;
+    return base.filter((t) =>
+      `${t.title}\n${t.description}\n${t.tags.join(' ')}`.toLowerCase().includes(q),
+    );
+  }, [tasks, activeProjectId, globalSearchQuery]);
   const completedTasks = doneColumnId ? projectTasks.filter((t) => t.status === doneColumnId) : [];
 
   const teamPerformance = users.map((user) => {

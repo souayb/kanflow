@@ -33,7 +33,19 @@ struct TaskRow {
     tags: Vec<String>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
+    github_issue_number: Option<i32>,
+    github_issue_url: Option<String>,
+    // Persisted for future two-way sync / re-linking; not emitted to clients yet.
+    #[allow(dead_code)]
+    github_node_id: Option<String>,
+    #[allow(dead_code)]
+    github_project_item_id: Option<String>,
 }
+
+/// Column list shared by every `SELECT`/`RETURNING` for a full task row.
+const TASK_COLS: &str = "id, project_id, column_id, title, description, priority, \
+    assignee_id, due_at, tags, created_at, updated_at, \
+    github_issue_number, github_issue_url, github_node_id, github_project_item_id";
 
 #[derive(FromRow)]
 struct CommentRow {
@@ -81,6 +93,8 @@ fn task_json(
         "dependencies": deps_v,
         "createdAt":   t.created_at.timestamp_millis(),
         "updatedAt":   t.updated_at.timestamp_millis(),
+        "githubIssueNumber": t.github_issue_number,
+        "githubIssueUrl":    t.github_issue_url,
     })
 }
 
@@ -93,9 +107,7 @@ pub async fn list_tasks(
     let Some(pool) = &state.pg else { return pg_unavailable() };
 
     let task_rows = sqlx::query_as::<_, TaskRow>(
-        "SELECT id, project_id, column_id, title, description, priority,
-                assignee_id, due_at, tags, created_at, updated_at
-         FROM tasks WHERE project_id = $1 ORDER BY created_at ASC",
+        &format!("SELECT {TASK_COLS} FROM tasks WHERE project_id = $1 ORDER BY created_at ASC"),
     )
     .bind(project_id)
     .fetch_all(pool)
@@ -188,11 +200,12 @@ pub async fn create_task(
         .due_date
         .and_then(|ms| DateTime::from_timestamp_millis(ms));
 
-    match sqlx::query_as::<_, TaskRow>(
-        "INSERT INTO tasks (project_id, column_id, title, description, priority, assignee_id, due_at, tags)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-         RETURNING id, project_id, column_id, title, description, priority,
-                   assignee_id, due_at, tags, created_at, updated_at",
+    let inserted = sqlx::query_as::<_, TaskRow>(
+        &format!(
+            "INSERT INTO tasks (project_id, column_id, title, description, priority, assignee_id, due_at, tags)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+             RETURNING {TASK_COLS}"
+        ),
     )
     .bind(project_id)
     .bind(body.status)
@@ -203,11 +216,76 @@ pub async fn create_task(
     .bind(due_at)
     .bind(&body.tags)
     .fetch_one(pool)
-    .await
-    {
-        Ok(t) => (StatusCode::CREATED, Json(json!({ "task": task_json(&t, &[], &[]) }))).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
+    .await;
+
+    let mut task = match inserted {
+        Ok(t) => t,
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
+    };
+
+    // ── Best-effort GitHub sync ────────────────────────────────────────────
+    // Failures are logged, never fatal: the task already exists in Postgres.
+    if let Some(gh) = &state.github {
+        match sync_new_issue(gh, pool, &task).await {
+            Ok(Some(updated)) => task = updated,
+            Ok(None) => {}
+            Err(e) => tracing::warn!(task = %task.id, "GitHub issue sync failed: {e:#}"),
+        }
     }
+
+    (StatusCode::CREATED, Json(json!({ "task": task_json(&task, &[], &[]) }))).into_response()
+}
+
+/// Create a GitHub issue for a freshly-inserted task, add it to the Projects v2
+/// board (if configured), and persist the linkage back onto the task row.
+/// Returns the updated row, or `None` if nothing changed.
+async fn sync_new_issue(
+    gh: &crate::github::GithubClient,
+    pool: &sqlx::PgPool,
+    task: &TaskRow,
+) -> anyhow::Result<Option<TaskRow>> {
+    let body = issue_body(&task.description, &task.priority, &task.tags);
+    let issue = gh.create_issue(&task.title, &body, &task.tags).await?;
+    // Non-fatal if the board add fails — the issue still exists.
+    let item_id = match gh.add_issue_to_project(&issue.node_id).await {
+        Ok(id) => id,
+        Err(e) => {
+            tracing::warn!(task = %task.id, issue = issue.number, "add-to-project failed: {e:#}");
+            None
+        }
+    };
+
+    let updated = sqlx::query_as::<_, TaskRow>(
+        &format!(
+            "UPDATE tasks SET github_issue_number=$1, github_issue_url=$2,
+                              github_node_id=$3, github_project_item_id=$4
+             WHERE id=$5 RETURNING {TASK_COLS}"
+        ),
+    )
+    .bind(issue.number as i32)
+    .bind(&issue.html_url)
+    .bind(&issue.node_id)
+    .bind(item_id.as_deref())
+    .bind(task.id)
+    .fetch_one(pool)
+    .await?;
+    tracing::info!(task = %task.id, issue = issue.number, "GitHub issue created");
+    Ok(Some(updated))
+}
+
+/// Render a task's fields into a GitHub issue body (Markdown).
+fn issue_body(description: &str, priority: &str, tags: &[String]) -> String {
+    let mut s = String::new();
+    if !description.trim().is_empty() {
+        s.push_str(description.trim());
+        s.push_str("\n\n");
+    }
+    s.push_str(&format!("**Priority:** {priority}\n"));
+    if !tags.is_empty() {
+        s.push_str(&format!("**Tags:** {}\n", tags.join(", ")));
+    }
+    s.push_str("\n_Synced from Kanflow._");
+    s
 }
 
 // ── PATCH /api/v1/tasks/:task_id ─────────────────────────────────────────────
@@ -233,9 +311,7 @@ pub async fn update_task(
 ) -> impl IntoResponse {
     let Some(pool) = &state.pg else { return pg_unavailable() };
     let current = sqlx::query_as::<_, TaskRow>(
-        "SELECT id, project_id, column_id, title, description, priority,
-                assignee_id, due_at, tags, created_at, updated_at
-         FROM tasks WHERE id = $1",
+        &format!("SELECT {TASK_COLS} FROM tasks WHERE id = $1"),
     )
     .bind(task_id)
     .fetch_optional(pool)
@@ -262,12 +338,12 @@ pub async fn update_task(
     };
     let tags = body.tags.unwrap_or(current.tags);
 
-    match sqlx::query_as::<_, TaskRow>(
-        "UPDATE tasks SET title=$1, description=$2, priority=$3, column_id=$4,
-                          assignee_id=$5, due_at=$6, tags=$7, updated_at=now()
-         WHERE id=$8
-         RETURNING id, project_id, column_id, title, description, priority,
-                   assignee_id, due_at, tags, created_at, updated_at",
+    let updated = sqlx::query_as::<_, TaskRow>(
+        &format!(
+            "UPDATE tasks SET title=$1, description=$2, priority=$3, column_id=$4,
+                              assignee_id=$5, due_at=$6, tags=$7, updated_at=now()
+             WHERE id=$8 RETURNING {TASK_COLS}"
+        ),
     )
     .bind(&title)
     .bind(&description)
@@ -278,11 +354,36 @@ pub async fn update_task(
     .bind(&tags)
     .bind(task_id)
     .fetch_one(pool)
-    .await
-    {
-        Ok(t) => Json(json!({ "task": task_json(&t, &[], &[]) })).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
+    .await;
+
+    let task = match updated {
+        Ok(t) => t,
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
+    };
+
+    // ── Best-effort GitHub sync of the linked issue (title/body/open-closed) ─
+    if let (Some(gh), Some(number)) = (&state.github, task.github_issue_number) {
+        let closed = column_is_done(pool, task.column_id).await;
+        let state_ = if closed { crate::github::IssueState::Closed } else { crate::github::IssueState::Open };
+        let body = issue_body(&task.description, &task.priority, &task.tags);
+        if let Err(e) = gh.update_issue(number as i64, &task.title, &body, state_).await {
+            tracing::warn!(task = %task.id, issue = number, "GitHub issue update failed: {e:#}");
+        }
     }
+
+    Json(json!({ "task": task_json(&task, &[], &[]) })).into_response()
+}
+
+/// A task landing in a column literally titled "done" (case-insensitive) closes its issue.
+async fn column_is_done(pool: &sqlx::PgPool, column_id: Uuid) -> bool {
+    sqlx::query_scalar::<_, String>("SELECT title FROM columns WHERE id = $1")
+        .bind(column_id)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+        .map(|t| t.trim().eq_ignore_ascii_case("done"))
+        .unwrap_or(false)
 }
 
 // ── DELETE /api/v1/tasks/:task_id ────────────────────────────────────────────
@@ -292,6 +393,24 @@ pub async fn delete_task(
     Path(task_id): Path<Uuid>,
 ) -> impl IntoResponse {
     let Some(pool) = &state.pg else { return pg_unavailable() };
+
+    // Close the linked GitHub issue first (best-effort) — after the row is gone
+    // we'd lose the issue number.
+    if let Some(gh) = &state.github {
+        if let Ok(Some(number)) = sqlx::query_scalar::<_, Option<i32>>(
+            "SELECT github_issue_number FROM tasks WHERE id = $1",
+        )
+        .bind(task_id)
+        .fetch_optional(pool)
+        .await
+        .map(Option::flatten)
+        {
+            if let Err(e) = gh.close_issue(number as i64).await {
+                tracing::warn!(task = %task_id, issue = number, "GitHub issue close failed: {e:#}");
+            }
+        }
+    }
+
     match sqlx::query("DELETE FROM tasks WHERE id = $1")
         .bind(task_id)
         .execute(pool)

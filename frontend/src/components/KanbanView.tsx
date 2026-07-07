@@ -21,6 +21,7 @@ import Avatar from './Avatar';
 import { motion, AnimatePresence } from 'framer-motion';
 import { type Priority, type Task } from '../types';
 import TaskModal from './TaskModal';
+import InviteTeamModal from './InviteTeamModal';
 
 // ── Board filter / view preferences ─────────────────────────────────────────
 
@@ -98,7 +99,13 @@ function taskMatchesFilters(
   f: BoardFilters,
   doneColumnId: string | null,
   now: number,
+  globalSearch: string,
 ): boolean {
+  const qGlobal = globalSearch.trim().toLowerCase();
+  if (qGlobal) {
+    const hayG = `${task.title}\n${task.description}\n${task.tags.join(' ')}`.toLowerCase();
+    if (!hayG.includes(qGlobal)) return false;
+  }
   const q = f.search.trim().toLowerCase();
   if (q) {
     const hay = `${task.title}\n${task.description}\n${task.tags.join(' ')}`.toLowerCase();
@@ -153,7 +160,8 @@ function sortColumnTasks(tasks: Task[], sort: BoardSort): Task[] {
   return arr;
 }
 
-function filtersActive(f: BoardFilters): boolean {
+function filtersActive(f: BoardFilters, globalSearch: string): boolean {
+  if (globalSearch.trim()) return true;
   if (f.search.trim()) return true;
   if (!f.priority.low || !f.priority.medium || !f.priority.high) return true;
   if (f.assignee !== 'any') return true;
@@ -163,8 +171,9 @@ function filtersActive(f: BoardFilters): boolean {
   return false;
 }
 
-function countActiveFilterBits(f: BoardFilters): number {
+function countActiveFilterBits(f: BoardFilters, globalSearch: string): number {
   let n = 0;
+  if (globalSearch.trim()) n++;
   if (f.search.trim()) n++;
   if (!f.priority.low || !f.priority.medium || !f.priority.high) n++;
   if (f.assignee !== 'any') n++;
@@ -181,8 +190,19 @@ const COLUMN_WIDTH: Record<BoardViewOptions['columnWidth'], string> = {
 };
 
 export default function KanbanView() {
-  const { tasks, projects, users, activeProjectId, addTask, deleteTask } = useApp();
+  const {
+    tasks,
+    projects,
+    users,
+    activeProjectId,
+    addTask,
+    deleteTask,
+    globalSearchQuery,
+    pendingOpenTaskId,
+    clearPendingOpenTask,
+  } = useApp();
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [inviteOpen, setInviteOpen] = useState(false);
   const [isAddingTask, setIsAddingTask] = useState<string | null>(null);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [filterOpen, setFilterOpen] = useState(false);
@@ -233,6 +253,14 @@ export default function KanbanView() {
     return () => document.removeEventListener('mousedown', onDoc);
   }, [filterOpen, viewOpen]);
 
+  useEffect(() => {
+    if (!pendingOpenTaskId || !activeProjectId) return;
+    const t = tasks.find((x) => x.id === pendingOpenTaskId);
+    if (!t || t.projectId !== activeProjectId) return;
+    setSelectedTaskId(pendingOpenTaskId);
+    clearPendingOpenTask();
+  }, [pendingOpenTaskId, activeProjectId, tasks, clearPendingOpenTask]);
+
   const now = Date.now();
   const projectTasks = useMemo(
     () => tasks.filter((t) => t.projectId === activeProjectId),
@@ -240,8 +268,8 @@ export default function KanbanView() {
   );
 
   const filteredTasks = useMemo(
-    () => projectTasks.filter((t) => taskMatchesFilters(t, filters, doneColumnId, now)),
-    [projectTasks, filters, doneColumnId, now],
+    () => projectTasks.filter((t) => taskMatchesFilters(t, filters, doneColumnId, now, globalSearchQuery)),
+    [projectTasks, filters, doneColumnId, now, globalSearchQuery],
   );
 
   const allTags = useMemo(() => {
@@ -250,8 +278,17 @@ export default function KanbanView() {
     return [...s].sort((a, b) => a.localeCompare(b));
   }, [projectTasks]);
 
-  const filterCount = countActiveFilterBits(filters);
-  const hasFilters = filtersActive(filters);
+  const teamMembers = useMemo(() => {
+    if (!activeProject) return [];
+    const ids = Array.from(new Set([activeProject.ownerId, ...(activeProject.memberIds ?? [])].filter(Boolean)));
+    return ids
+      .map((id) => users.find((u) => u.id === id))
+      .filter((u): u is (typeof users)[number] => Boolean(u))
+      .slice(0, 8);
+  }, [activeProject, users]);
+
+  const filterCount = countActiveFilterBits(filters, globalSearchQuery);
+  const hasFilters = filtersActive(filters, globalSearchQuery);
 
   const clearFilters = useCallback(() => setFilters(DEFAULT_FILTERS), []);
 
@@ -592,18 +629,22 @@ export default function KanbanView() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="flex -space-x-2">
-            {['Alex Rivera', 'Sam Chen', 'Jordan Taylor', 'Morgan Lee'].map((name) => (
+            {teamMembers.map((u) => (
               <Avatar
-                key={name}
-                name={name}
+                key={u.id}
+                name={u.name}
                 className="w-9 h-9 text-xs border-2 border-kf-white shadow-sm"
               />
             ))}
-            <div className="w-9 h-9 rounded-full bg-kf-warm-gray flex items-center justify-center text-xs font-medium text-kf-slate border-2 border-kf-white">
-              +4
-            </div>
+            {teamMembers.length === 0 && (
+              <span className="text-xs text-kf-slate px-2">No teammates yet</span>
+            )}
           </div>
-          <button type="button" className="text-sm font-medium text-kf-meta-blue hover:text-kf-meta-blue-hover px-2">
+          <button
+            type="button"
+            onClick={() => setInviteOpen(true)}
+            className="text-sm font-medium text-kf-meta-blue hover:text-kf-meta-blue-hover px-2 min-h-[44px]"
+          >
             Invite teammates
           </button>
         </div>
@@ -707,6 +748,10 @@ export default function KanbanView() {
       <AnimatePresence>
         {selectedTaskId && <TaskModal taskId={selectedTaskId} onClose={() => setSelectedTaskId(null)} />}
       </AnimatePresence>
+
+      {activeProjectId && (
+        <InviteTeamModal open={inviteOpen} onClose={() => setInviteOpen(false)} projectId={activeProjectId} />
+      )}
     </div>
   );
 }

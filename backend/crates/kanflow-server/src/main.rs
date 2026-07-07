@@ -1,7 +1,9 @@
 //! Kanflow API server entrypoint.
 
 use anyhow::Context;
+use kanflow_server::auth::{fetch_and_cache_jwks, AuthConfig};
 use kanflow_server::config::ServerConfig;
+use kanflow_server::github::GithubClient;
 use kanflow_server::router;
 use kanflow_server::state::AppState;
 use mongodb::options::ClientOptions;
@@ -44,7 +46,34 @@ async fn main() -> anyhow::Result<()> {
         None
     };
 
-    let state = AppState::new(pg, mongo);
+    // ── Keycloak JWT auth ──────────────────────────────────────────────────
+    let auth = if let (Some(jwks_url), Some(issuer)) = (cfg.jwks_url(), cfg.token_issuer()) {
+        tracing::info!(%jwks_url, "Keycloak auth enabled");
+        let ac = AuthConfig::new(jwks_url, issuer);
+        // Pre-warm JWKS cache; warn (don't crash) if KC is not yet reachable
+        if let Err(e) = fetch_and_cache_jwks(&ac).await {
+            tracing::warn!("Could not pre-fetch JWKS (KC may still be starting): {e}");
+        }
+        Some(ac)
+    } else {
+        tracing::warn!("KEYCLOAK_URL / KEYCLOAK_REALM not set — auth disabled (all requests permitted)");
+        None
+    };
+
+    // ── GitHub one-way sync (optional) ─────────────────────────────────────
+    let github = match cfg.github.clone() {
+        Some(gh) => {
+            let client = GithubClient::new(gh);
+            tracing::info!(repo = %client.slug(), "GitHub sync enabled");
+            Some(client)
+        }
+        None => {
+            tracing::info!("GITHUB_TOKEN/OWNER/REPO not set — GitHub sync disabled");
+            None
+        }
+    };
+
+    let state = AppState::new(pg, mongo, auth).with_github(github);
     let app = router(state);
 
     let addr = format!("{}:{}", cfg.host, cfg.port);
