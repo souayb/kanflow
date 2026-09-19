@@ -19,6 +19,8 @@ vi.mock('../lib/api', () => ({
     updateTask: vi.fn().mockRejectedValue(new Error('offline')),
     deleteTask: vi.fn().mockRejectedValue(new Error('offline')),
     addComment: vi.fn().mockRejectedValue(new Error('offline')),
+    createTaskBranch: vi.fn().mockRejectedValue(new Error('offline')),
+    getGithubStatus: vi.fn().mockResolvedValue({ connected: false }),
   },
 }));
 

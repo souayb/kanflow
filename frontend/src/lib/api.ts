@@ -66,12 +66,23 @@ export interface ApiTask {
   assigneeId?: string;
   dueDate?: number;      // Unix ms
   tags: string[];
+  position: number;
   comments: ApiComment[];
   dependencies: string[];
   createdAt: number;
   updatedAt: number;
   aiSuggested?: boolean;
   aiThinking?: string;
+  githubIssueNumber?: number;
+  githubIssueUrl?: string;
+  githubBranchName?: string;
+  githubBranchUrl?: string;
+}
+
+export interface GithubIntegrationStatus {
+  connected: boolean;
+  owner?: string;
+  repo?: string;
 }
 
 /**
@@ -81,7 +92,7 @@ export interface ApiTask {
 export function buildTaskPatchBody(updates: Partial<ApiTask>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   const u = updates as Record<string, unknown>;
-  for (const key of ['title', 'description', 'priority', 'status', 'tags'] as const) {
+  for (const key of ['title', 'description', 'priority', 'status', 'tags', 'position'] as const) {
     if (key in updates && u[key] !== undefined) out[key] = u[key];
   }
   if ('dueDate' in updates) out.dueDate = u.dueDate == null ? 0 : u.dueDate;
@@ -157,7 +168,10 @@ export const api = {
   getTasks: (projectId: string) =>
     apiFetch<{ tasks: ApiTask[] }>(`/api/v1/projects/${projectId}/tasks`),
 
-  createTask: (projectId: string, body: Omit<ApiTask, 'id' | 'createdAt' | 'updatedAt' | 'comments'>) =>
+  createTask: (
+    projectId: string,
+    body: Omit<ApiTask, 'id' | 'createdAt' | 'updatedAt' | 'comments' | 'position'> & { position?: number },
+  ) =>
     apiFetch<{ task: ApiTask }>(`/api/v1/projects/${projectId}/tasks`, {
       method: 'POST', body: JSON.stringify(body),
     }),
@@ -170,6 +184,12 @@ export const api = {
 
   deleteTask: (id: string) =>
     apiFetch<void>(`/api/v1/tasks/${id}`, { method: 'DELETE' }),
+
+  createTaskBranch: (taskId: string) =>
+    apiFetch<{ task: ApiTask }>(`/api/v1/tasks/${taskId}/github-branch`, { method: 'POST' }),
+
+  // Integrations
+  getGithubStatus: () => apiFetch<GithubIntegrationStatus>('/api/v1/integrations/github'),
 
   // Comments
   addComment: (taskId: string, body: { user_id: string; user_name: string; content: string }) =>

@@ -46,12 +46,18 @@ export interface Task {
   dueDate?: number;
   projectId: string;
   tags: string[];
+  /** Manual sort position within its column (drag-and-drop order). */
+  position: number;
   comments: Comment[];
   createdAt: number;
   updatedAt: number;
   dependencies: string[]; // List of task IDs this task depends on
   aiSuggested?: boolean;
   aiThinking?: string;
+  githubIssueNumber?: number;
+  githubIssueUrl?: string;
+  githubBranchName?: string;
+  githubBranchUrl?: string;
 }
 
 export interface Column {

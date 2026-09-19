@@ -33,6 +33,10 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/tasks/{task_id}",
             patch(handlers::update_task).delete(handlers::delete_task))
         .route("/api/v1/tasks/{task_id}/comments", post(handlers::create_comment))
+        .route("/api/v1/tasks/{task_id}/github-branch", post(handlers::create_task_branch))
+
+        // ── Integrations ──────────────────────────────────────────────────
+        .route("/api/v1/integrations/github", get(handlers::github_status))
 
         // ── Chat (MongoDB) ────────────────────────────────────────────────
         .route("/api/v1/projects/{project_id}/chat",

@@ -31,6 +31,7 @@ struct TaskRow {
     assignee_id: Option<Uuid>,
     due_at: Option<DateTime<Utc>>,
     tags: Vec<String>,
+    position: f64,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
     github_issue_number: Option<i32>,
@@ -40,12 +41,15 @@ struct TaskRow {
     github_node_id: Option<String>,
     #[allow(dead_code)]
     github_project_item_id: Option<String>,
+    github_branch_name: Option<String>,
+    github_branch_url: Option<String>,
 }
 
 /// Column list shared by every `SELECT`/`RETURNING` for a full task row.
 const TASK_COLS: &str = "id, project_id, column_id, title, description, priority, \
-    assignee_id, due_at, tags, created_at, updated_at, \
-    github_issue_number, github_issue_url, github_node_id, github_project_item_id";
+    assignee_id, due_at, tags, position, created_at, updated_at, \
+    github_issue_number, github_issue_url, github_node_id, github_project_item_id, \
+    github_branch_name, github_branch_url";
 
 #[derive(FromRow)]
 struct CommentRow {
@@ -89,12 +93,15 @@ fn task_json(
         "assigneeId":  t.assignee_id,
         "dueDate":     t.due_at.map(|d| d.timestamp_millis()),
         "tags":        t.tags,
+        "position":    t.position,
         "comments":    comments_v,
         "dependencies": deps_v,
         "createdAt":   t.created_at.timestamp_millis(),
         "updatedAt":   t.updated_at.timestamp_millis(),
         "githubIssueNumber": t.github_issue_number,
         "githubIssueUrl":    t.github_issue_url,
+        "githubBranchName":  t.github_branch_name,
+        "githubBranchUrl":   t.github_branch_url,
     })
 }
 
@@ -107,7 +114,7 @@ pub async fn list_tasks(
     let Some(pool) = &state.pg else { return pg_unavailable() };
 
     let task_rows = sqlx::query_as::<_, TaskRow>(
-        &format!("SELECT {TASK_COLS} FROM tasks WHERE project_id = $1 ORDER BY created_at ASC"),
+        &format!("SELECT {TASK_COLS} FROM tasks WHERE project_id = $1 ORDER BY position ASC, created_at ASC"),
     )
     .bind(project_id)
     .fetch_all(pool)
@@ -183,6 +190,8 @@ pub struct CreateTaskBody {
     pub due_date: Option<i64>, // Unix ms
     #[serde(default)]
     pub tags: Vec<String>,
+    /// Manual sort position within the column. Omitted = append to the end.
+    pub position: Option<f64>,
 }
 fn default_priority() -> String { "medium".into() }
 
@@ -200,10 +209,24 @@ pub async fn create_task(
         .due_date
         .and_then(|ms| DateTime::from_timestamp_millis(ms));
 
+    let position = match body.position {
+        Some(p) => p,
+        None => {
+            let max: Option<f64> = sqlx::query_scalar(
+                "SELECT MAX(position) FROM tasks WHERE column_id = $1",
+            )
+            .bind(body.status)
+            .fetch_one(pool)
+            .await
+            .unwrap_or(None);
+            max.unwrap_or(0.0) + 1000.0
+        }
+    };
+
     let inserted = sqlx::query_as::<_, TaskRow>(
         &format!(
-            "INSERT INTO tasks (project_id, column_id, title, description, priority, assignee_id, due_at, tags)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            "INSERT INTO tasks (project_id, column_id, title, description, priority, assignee_id, due_at, tags, position)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
              RETURNING {TASK_COLS}"
         ),
     )
@@ -215,6 +238,7 @@ pub async fn create_task(
     .bind(body.assignee_id)
     .bind(due_at)
     .bind(&body.tags)
+    .bind(position)
     .fetch_one(pool)
     .await;
 
@@ -302,6 +326,8 @@ pub struct UpdateTaskBody {
     /// Unix ms; send `0` to clear (frontend convention).
     pub due_date: Option<i64>,
     pub tags: Option<Vec<String>>,
+    /// Manual sort position within the column. Omitted = unchanged.
+    pub position: Option<f64>,
 }
 
 pub async fn update_task(
@@ -337,12 +363,13 @@ pub async fn update_task(
         None => current.due_at,
     };
     let tags = body.tags.unwrap_or(current.tags);
+    let position = body.position.unwrap_or(current.position);
 
     let updated = sqlx::query_as::<_, TaskRow>(
         &format!(
             "UPDATE tasks SET title=$1, description=$2, priority=$3, column_id=$4,
-                              assignee_id=$5, due_at=$6, tags=$7, updated_at=now()
-             WHERE id=$8 RETURNING {TASK_COLS}"
+                              assignee_id=$5, due_at=$6, tags=$7, position=$8, updated_at=now()
+             WHERE id=$9 RETURNING {TASK_COLS}"
         ),
     )
     .bind(&title)
@@ -352,6 +379,7 @@ pub async fn update_task(
     .bind(assignee_id)
     .bind(due_at)
     .bind(&tags)
+    .bind(position)
     .bind(task_id)
     .fetch_one(pool)
     .await;
@@ -384,6 +412,85 @@ async fn column_is_done(pool: &sqlx::PgPool, column_id: Uuid) -> bool {
         .flatten()
         .map(|t| t.trim().eq_ignore_ascii_case("done"))
         .unwrap_or(false)
+}
+
+// ── POST /api/v1/tasks/:task_id/github-branch ────────────────────────────────
+
+/// Create (or, if one already exists, just return) a GitHub branch for a task.
+/// Branch name: `task/<slug-of-title>-<first 8 chars of the task id>`, so it's
+/// readable and still unique without a second round trip to check for clashes.
+pub async fn create_task_branch(
+    State(state): State<AppState>,
+    Path(task_id): Path<Uuid>,
+) -> impl IntoResponse {
+    let Some(pool) = &state.pg else { return pg_unavailable() };
+    let Some(gh) = &state.github else {
+        return (StatusCode::SERVICE_UNAVAILABLE, Json(json!({ "error": "github_not_connected" })))
+            .into_response();
+    };
+
+    let current = sqlx::query_as::<_, TaskRow>(&format!("SELECT {TASK_COLS} FROM tasks WHERE id = $1"))
+        .bind(task_id)
+        .fetch_optional(pool)
+        .await;
+    let current = match current {
+        Ok(Some(t)) => t,
+        Ok(None) => return (StatusCode::NOT_FOUND, Json(json!({ "error": "not_found" }))).into_response(),
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
+    };
+
+    // Idempotent: a branch already recorded for this task is returned as-is
+    // rather than attempting (and failing) to create it again.
+    if current.github_branch_name.is_some() {
+        return Json(json!({ "task": task_json(&current, &[], &[]) })).into_response();
+    }
+
+    let branch_name = format!("task/{}-{}", slugify(&current.title), &task_id.to_string()[..8]);
+    let branch = match gh.create_branch(&branch_name).await {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::warn!(task = %task_id, branch = %branch_name, "GitHub branch creation failed: {e:#}");
+            return (
+                StatusCode::BAD_GATEWAY,
+                Json(json!({ "error": "github_branch_failed", "detail": e.to_string() })),
+            )
+                .into_response();
+        }
+    };
+
+    let updated = sqlx::query_as::<_, TaskRow>(
+        &format!("UPDATE tasks SET github_branch_name=$1, github_branch_url=$2 WHERE id=$3 RETURNING {TASK_COLS}"),
+    )
+    .bind(&branch.name)
+    .bind(&branch.html_url)
+    .bind(task_id)
+    .fetch_one(pool)
+    .await;
+
+    match updated {
+        Ok(t) => Json(json!({ "task": task_json(&t, &[], &[]) })).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
+    }
+}
+
+/// Lowercase, alphanumeric-and-hyphens, collapsed and trimmed — good enough for a
+/// git branch segment. Truncated so the full branch name stays a reasonable length.
+fn slugify(title: &str) -> String {
+    let mut slug = String::new();
+    let mut last_was_hyphen = true; // swallow a leading hyphen
+    for c in title.to_lowercase().chars() {
+        if c.is_ascii_alphanumeric() {
+            slug.push(c);
+            last_was_hyphen = false;
+        } else if !last_was_hyphen {
+            slug.push('-');
+            last_was_hyphen = true;
+        }
+    }
+    if slug.ends_with('-') {
+        slug.pop();
+    }
+    slug.chars().take(40).collect()
 }
 
 // ── DELETE /api/v1/tasks/:task_id ────────────────────────────────────────────

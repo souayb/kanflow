@@ -39,8 +39,19 @@ function buildAppliedDescriptionFromAi(r: TaskEnhancementResult): string {
 }
 
 export default function TaskModal({ taskId, onClose }: TaskModalProps) {
-  const { tasks, users, projects, updateTask, deleteTask, addComment, addDependency, addNotification, currentUser } =
-    useApp();
+  const {
+    tasks,
+    users,
+    projects,
+    updateTask,
+    deleteTask,
+    addComment,
+    addDependency,
+    addNotification,
+    currentUser,
+    githubStatus,
+    createTaskBranch,
+  } = useApp();
   const task = tasks.find((t) => t.id === taskId);
   const [commentText, setCommentText] = useState('');
   const [isRefining, setIsRefining] = useState(false);
@@ -48,6 +59,8 @@ export default function TaskModal({ taskId, onClose }: TaskModalProps) {
   const [aiError, setAiError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'details' | 'comments' | 'ai' | 'dependencies'>('details');
   const [newTag, setNewTag] = useState('');
+  const [isCreatingBranch, setIsCreatingBranch] = useState(false);
+  const [branchError, setBranchError] = useState<string | null>(null);
 
   useEffect(() => {
     setNewTag('');
@@ -61,6 +74,25 @@ export default function TaskModal({ taskId, onClose }: TaskModalProps) {
     [taskProject],
   );
   const doneColumnId = columnsSorted.length ? columnsSorted[columnsSorted.length - 1].id : null;
+
+  const handleCreateBranch = async () => {
+    setBranchError(null);
+    setIsCreatingBranch(true);
+    try {
+      await createTaskBranch(taskId);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : '';
+      setBranchError(
+        message === 'github_branch_failed'
+          ? 'GitHub rejected the branch (it may already exist).'
+          : message === 'github_not_connected'
+            ? 'GitHub is not connected on this server.'
+            : 'Could not create the branch.',
+      );
+    } finally {
+      setIsCreatingBranch(false);
+    }
+  };
 
   const assignee = users.find((u) => u.id === task.assigneeId);
   const availableTasks = tasks.filter(
@@ -317,6 +349,51 @@ export default function TaskModal({ taskId, onClose }: TaskModalProps) {
                   ))}
                 </select>
               </div>
+
+              {githubStatus.connected && (
+                <div className="space-y-2">
+                  <span className="text-kf-slate block">GitHub</span>
+                  <div className="flex items-center gap-3 flex-wrap py-2">
+                    {task.githubIssueUrl && (
+                      <a
+                        href={task.githubIssueUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center gap-1.5 text-sm font-medium text-kf-meta-blue hover:text-kf-meta-blue-hover"
+                      >
+                        <LinkIcon size={14} strokeWidth={1.75} />
+                        Issue #{task.githubIssueNumber}
+                      </a>
+                    )}
+                    {task.githubBranchUrl ? (
+                      <a
+                        href={task.githubBranchUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center gap-1.5 text-sm font-medium text-kf-meta-blue hover:text-kf-meta-blue-hover"
+                      >
+                        <LinkIcon size={14} strokeWidth={1.75} />
+                        {task.githubBranchName}
+                      </a>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleCreateBranch}
+                        disabled={isCreatingBranch}
+                        className="kf-btn-secondary text-xs !py-1.5 !px-3 gap-1.5 disabled:opacity-60"
+                      >
+                        {isCreatingBranch ? (
+                          <Loader2 size={13} className="animate-spin" />
+                        ) : (
+                          <LinkIcon size={13} strokeWidth={1.75} />
+                        )}
+                        Create branch
+                      </button>
+                    )}
+                  </div>
+                  {branchError && <p className="text-[11px] text-kf-error">{branchError}</p>}
+                </div>
+              )}
             </div>
 
             {/* Tabs */}

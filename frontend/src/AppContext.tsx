@@ -15,7 +15,7 @@ import {
 } from './types';
 import { MOCK_PROJECTS, MOCK_TASKS, MOCK_USERS, MOCK_USER_ALEX } from './constants';
 import { KANFLOW_KEYS, migrateZenithToKanflow, readStoredJson, writeStoredJson } from './lib/storage';
-import { api, type ApiTask, type ApiProject, type ApiColumn, type ApiUserRow } from './lib/api';
+import { api, type ApiTask, type ApiProject, type ApiColumn, type ApiUserRow, type GithubIntegrationStatus } from './lib/api';
 
 interface AppContextType {
   projects: Project[];
@@ -27,10 +27,12 @@ interface AppContextType {
   dashboardWidgets: DashboardWidget[];
   activeProjectId: string | null;
   apiOnline: boolean;
+  githubStatus: GithubIntegrationStatus;
   setActiveProjectId: (id: string | null) => void;
-  addTask: (task: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'comments'>) => void;
+  addTask: (task: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'comments' | 'position'> & { position?: number }) => void;
   updateTask: (id: string, updates: Partial<Task>) => void;
   deleteTask: (id: string) => void;
+  createTaskBranch: (taskId: string) => Promise<void>;
   addComment: (taskId: string, userId: string, content: string) => void;
   addNotification: (notification: Omit<Notification, 'id' | 'createdAt' | 'read'>) => void;
   markNotificationAsRead: (id: string) => void;
@@ -94,6 +96,7 @@ function apiTaskToTask(t: ApiTask): Task {
     dueDate: t.dueDate,
     projectId: t.projectId,
     tags: t.tags ?? [],
+    position: t.position ?? 0,
     comments: (t.comments ?? []).map((c) => ({
       id: c.id,
       userId: c.userId,
@@ -106,6 +109,10 @@ function apiTaskToTask(t: ApiTask): Task {
     dependencies: t.dependencies ?? [],
     aiSuggested: t.aiSuggested,
     aiThinking: t.aiThinking,
+    githubIssueNumber: t.githubIssueNumber,
+    githubIssueUrl: t.githubIssueUrl,
+    githubBranchName: t.githubBranchName,
+    githubBranchUrl: t.githubBranchUrl,
   };
 }
 
@@ -211,6 +218,7 @@ export function AppProvider({ children, kcUser }: { children: React.ReactNode; k
   // Prefer the Keycloak-authenticated user; fall back to localStorage/mock
   const [currentUser, setCurrentUser] = useState<User | null>(kcUser ?? initial.currentUser);
   const [apiOnline, setApiOnline] = useState(false);
+  const [githubStatus, setGithubStatus] = useState<GithubIntegrationStatus>({ connected: false });
   const [globalSearchQuery, setGlobalSearchQuery] = useState('');
   const [pendingOpenTaskId, setPendingOpenTaskId] = useState<string | null>(null);
   const [boardNavSeq, setBoardNavSeq] = useState(0);
@@ -221,6 +229,16 @@ export function AppProvider({ children, kcUser }: { children: React.ReactNode; k
   useEffect(() => {
     if (kcUser) setCurrentUser(kcUser);
   }, [kcUser]);
+
+  // Real backend GitHub connectivity (instance-wide) — gates GitHub-only task UI.
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .getGithubStatus()
+      .then((status) => { if (!cancelled) setGithubStatus(status); })
+      .catch(() => {/* stay disconnected */});
+    return () => { cancelled = true; };
+  }, []);
 
   // ── Bootstrap from API ───────────────────────────────────────────────────
   useEffect(() => {
@@ -333,12 +351,20 @@ export function AppProvider({ children, kcUser }: { children: React.ReactNode; k
 
   // ── Task mutations ───────────────────────────────────────────────────────
   const addTask = useCallback(
-    (taskData: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'comments'>) => {
+    (
+      taskData: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'comments' | 'position'> & {
+        position?: number;
+      },
+    ) => {
       const tempId = Math.random().toString(36).substring(2, 11);
       const now = Date.now();
+      const position =
+        taskData.position ??
+        Math.max(0, ...tasks.filter((t) => t.status === taskData.status).map((t) => t.position)) + 1000;
       const newTask: Task = {
         ...taskData,
         id: tempId,
+        position,
         createdAt: now,
         updatedAt: now,
         comments: [],
@@ -366,6 +392,7 @@ export function AppProvider({ children, kcUser }: { children: React.ReactNode; k
             dependencies: taskData.dependencies ?? [],
             assigneeId: taskData.assigneeId,
             dueDate: taskData.dueDate,
+            position,
           })
           .then(({ task }) => {
             // Swap temp ID for server-assigned ID
@@ -374,7 +401,7 @@ export function AppProvider({ children, kcUser }: { children: React.ReactNode; k
           .catch(() => {/* keep optimistic state */});
       }
     },
-    [apiOnline, addNotification, currentUser],
+    [apiOnline, addNotification, currentUser, tasks],
   );
 
   const updateTask = useCallback(
@@ -399,6 +426,11 @@ export function AppProvider({ children, kcUser }: { children: React.ReactNode; k
     },
     [apiOnline],
   );
+
+  const createTaskBranch = useCallback(async (taskId: string) => {
+    const { task } = await api.createTaskBranch(taskId);
+    setTasks((prev) => prev.map((t) => (t.id === taskId ? apiTaskToTask(task) : t)));
+  }, []);
 
   const addComment = useCallback(
     (taskId: string, userId: string, content: string) => {
@@ -713,10 +745,12 @@ export function AppProvider({ children, kcUser }: { children: React.ReactNode; k
         dashboardWidgets,
         activeProjectId,
         apiOnline,
+        githubStatus,
         setActiveProjectId,
         addTask,
         updateTask,
         deleteTask,
+        createTaskBranch,
         addComment,
         addNotification,
         markNotificationAsRead,

@@ -23,6 +23,13 @@ pub struct IssueRef {
     pub node_id: String,
 }
 
+/// A branch created for a task — the bits we persist on it.
+#[derive(Debug, Clone)]
+pub struct BranchRef {
+    pub name: String,
+    pub html_url: String,
+}
+
 /// Thin GitHub client. Cheap to clone (reqwest::Client is an Arc internally);
 /// the resolved Projects v2 node id is cached after the first lookup.
 #[derive(Clone)]
@@ -44,6 +51,14 @@ impl GithubClient {
     /// `owner/repo` — handy for logs.
     pub fn slug(&self) -> String {
         format!("{}/{}", self.cfg.owner, self.cfg.repo)
+    }
+
+    pub fn owner(&self) -> &str {
+        &self.cfg.owner
+    }
+
+    pub fn repo(&self) -> &str {
+        &self.cfg.repo
     }
 
     fn auth(&self, rb: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
@@ -101,6 +116,52 @@ impl GithubClient {
             .await?;
         ensure_ok(res, "close_issue").await?;
         Ok(())
+    }
+
+    // ── Branches (Git Data API) ─────────────────────────────────────────────────
+
+    /// The repository's default branch (`GET /repos/{owner}/{repo}`), used as the
+    /// base a new task branch forks from. Not cached — a repo can change its
+    /// default branch, and this only runs once per manual "create branch" click.
+    async fn default_branch(&self) -> anyhow::Result<String> {
+        let url = format!("{REST_BASE}/repos/{}/{}", self.cfg.owner, self.cfg.repo);
+        let res = self.auth(self.http.get(&url)).send().await?;
+        let res = ensure_ok(res, "get_repo").await?;
+        let v: serde_json::Value = res.json().await?;
+        v.get("default_branch")
+            .and_then(|b| b.as_str())
+            .map(str::to_string)
+            .ok_or_else(|| anyhow::anyhow!("repo response missing default_branch"))
+    }
+
+    /// Create a branch named `name` off the repository's current default branch.
+    /// `POST /repos/{owner}/{repo}/git/refs` — fails (e.g. `422 Reference already
+    /// exists`) if the branch is already there; callers persist the name only on
+    /// success, so a retry after a failed prior attempt tries the same name again.
+    pub async fn create_branch(&self, name: &str) -> anyhow::Result<BranchRef> {
+        let base = self.default_branch().await?;
+        let ref_url = format!(
+            "{REST_BASE}/repos/{}/{}/git/ref/heads/{base}",
+            self.cfg.owner, self.cfg.repo
+        );
+        let res = self.auth(self.http.get(&ref_url)).send().await?;
+        let res = ensure_ok(res, "get_base_ref").await?;
+        let v: serde_json::Value = res.json().await?;
+        let sha = v
+            .get("object")
+            .and_then(|o| o.get("sha"))
+            .and_then(|s| s.as_str())
+            .ok_or_else(|| anyhow::anyhow!("base ref response missing object.sha"))?;
+
+        let create_url = format!("{REST_BASE}/repos/{}/{}/git/refs", self.cfg.owner, self.cfg.repo);
+        let payload = json!({ "ref": format!("refs/heads/{name}"), "sha": sha });
+        let res = self.auth(self.http.post(&create_url)).json(&payload).send().await?;
+        ensure_ok(res, "create_branch").await?;
+
+        Ok(BranchRef {
+            name: name.to_string(),
+            html_url: format!("https://github.com/{}/{}/tree/{name}", self.cfg.owner, self.cfg.repo),
+        })
     }
 
     // ── Projects v2 (GraphQL) ──────────────────────────────────────────────────

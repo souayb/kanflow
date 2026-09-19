@@ -1,6 +1,21 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../AppContext';
 import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  closestCenter,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+  type DraggableAttributes,
+  type DraggableSyntheticListeners,
+} from '@dnd-kit/core';
+import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import {
   Plus,
   MoreHorizontal,
   Calendar,
@@ -139,7 +154,7 @@ function taskMatchesFilters(
 function sortColumnTasks(tasks: Task[], sort: BoardSort): Task[] {
   const arr = [...tasks];
   if (sort === 'manual') {
-    arr.sort((a, b) => a.createdAt - b.createdAt);
+    arr.sort((a, b) => a.position - b.position || a.createdAt - b.createdAt);
     return arr;
   }
   if (sort === 'dueSoon') {
@@ -196,6 +211,7 @@ export default function KanbanView() {
     users,
     activeProjectId,
     addTask,
+    updateTask,
     deleteTask,
     globalSearchQuery,
     pendingOpenTaskId,
@@ -205,6 +221,9 @@ export default function KanbanView() {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [isAddingTask, setIsAddingTask] = useState<string | null>(null);
   const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [newTaskPriority, setNewTaskPriority] = useState<Priority>('medium');
+  const [activeDragTask, setActiveDragTask] = useState<Task | null>(null);
+  const dragSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
   const [filterOpen, setFilterOpen] = useState(false);
   const [viewOpen, setViewOpen] = useState(false);
   const [filters, setFilters] = useState<BoardFilters>(DEFAULT_FILTERS);
@@ -313,13 +332,61 @@ export default function KanbanView() {
       title: newTaskTitle,
       description: '',
       status: columnId,
-      priority: 'medium',
+      priority: newTaskPriority,
       projectId: activeProjectId!,
       tags: [],
       dependencies: [],
     });
     setNewTaskTitle('');
+    setNewTaskPriority('medium');
     setIsAddingTask(null);
+  };
+
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveDragTask(tasks.find((t) => t.id === event.active.id) ?? null);
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    setActiveDragTask(null);
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const activeTask = tasks.find((t) => t.id === active.id);
+    if (!activeTask) return;
+
+    const overId = String(over.id);
+    const overTask = tasks.find((t) => t.id === overId);
+    // Dropped on a card → that card's column; dropped on bare column space → the column itself.
+    const destColumnId = overTask ? overTask.status : overId;
+    if (!activeProject.columns.some((c) => c.id === destColumnId)) return;
+
+    const siblings = tasks
+      .filter((t) => t.status === destColumnId && t.id !== activeTask.id)
+      .sort((a, b) => a.position - b.position);
+
+    let index = siblings.length;
+    if (overTask) {
+      const overIndex = siblings.findIndex((t) => t.id === overTask.id);
+      if (overIndex !== -1) {
+        const activeRect = active.rect.current.translated ?? active.rect.current.initial;
+        const movingDown = activeRect ? activeRect.top > over.rect.top : false;
+        index = movingDown ? overIndex + 1 : overIndex;
+      }
+    }
+
+    const before = siblings[index - 1];
+    const after = siblings[index];
+    const position =
+      before && after
+        ? (before.position + after.position) / 2
+        : before
+          ? before.position + 1000
+          : after
+            ? after.position - 1000
+            : 1000;
+
+    if (destColumnId === activeTask.status && Math.abs(position - activeTask.position) < 1e-6) return;
+    updateTask(activeTask.id, { status: destColumnId, position });
   };
 
   return (
@@ -650,100 +717,71 @@ export default function KanbanView() {
         </div>
       </div>
 
-      <div className="flex-1 flex gap-4 md:gap-6 overflow-x-auto pb-4 items-start custom-scrollbar">
-        {activeProject.columns.map((column) => {
-          const columnTasks = sortColumnTasks(
-            filteredTasks.filter((t) => t.status === column.id),
-            viewOptions.sortWithinColumn,
-          );
-          const totalInColumn = projectTasks.filter((t) => t.status === column.id).length;
+      <DndContext
+        sensors={dragSensors}
+        collisionDetection={closestCenter}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+      >
+        <div className="flex-1 flex gap-4 md:gap-6 overflow-x-auto pb-4 items-start custom-scrollbar">
+          {activeProject.columns.map((column) => {
+            const columnTasks = sortColumnTasks(
+              filteredTasks.filter((t) => t.status === column.id),
+              viewOptions.sortWithinColumn,
+            );
+            const totalInColumn = projectTasks.filter((t) => t.status === column.id).length;
 
-          return (
-            <div
-              key={column.id}
-              className={cn(COLUMN_WIDTH[viewOptions.columnWidth], 'flex-shrink-0 flex flex-col max-h-full')}
-            >
-              <div className="flex items-center justify-between mb-4 group px-1">
-                <div className="flex items-center gap-2 min-w-0">
-                  <h3 className="font-medium text-sm text-kf-charcoal truncate">{column.title}</h3>
-                  <span className="bg-kf-warm-gray text-kf-slate text-xs font-medium px-2.5 py-0.5 rounded-full border border-kf-divider-gray shrink-0">
-                    {columnTasks.length}
-                    {hasFilters && totalInColumn !== columnTasks.length ? (
-                      <span className="text-kf-secondary-text font-normal">/{totalInColumn}</span>
-                    ) : null}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  className="text-kf-icon-secondary opacity-0 group-hover:opacity-100 hover:text-kf-charcoal transition-all p-1 rounded-[8px]"
-                >
-                  <MoreHorizontal size={18} />
-                </button>
-              </div>
+            return (
+              <KanbanColumn
+                key={column.id}
+                column={column}
+                columnTasks={columnTasks}
+                totalInColumn={totalInColumn}
+                hasFilters={hasFilters}
+                viewOptions={viewOptions}
+                doneColumnId={doneColumnId}
+                isAddingTask={isAddingTask === column.id}
+                newTaskTitle={newTaskTitle}
+                onNewTaskTitleChange={setNewTaskTitle}
+                newTaskPriority={newTaskPriority}
+                onNewTaskPriorityChange={setNewTaskPriority}
+                onStartAddTask={() => { setNewTaskPriority('medium'); setIsAddingTask(column.id); }}
+                onCancelAddTask={() => setIsAddingTask(null)}
+                onAddTask={() => handleAddTask(column.id)}
+                onOpenTask={(taskId) => setSelectedTaskId(taskId)}
+                onDeleteTask={(taskId) => deleteTask(taskId)}
+                dragActive={activeDragTask != null}
+              />
+            );
+          })}
 
-              <div className="flex-1 overflow-y-auto space-y-3 pr-1 custom-scrollbar min-h-[50px]">
-                {columnTasks.map((task) => (
-                  <TaskCard
-                    key={task.id}
-                    task={task}
-                    doneColumnId={doneColumnId}
-                    density={viewOptions.cardDensity}
-                    showTags={viewOptions.showTagsOnCards}
-                    showMeta={viewOptions.showMetaOnCards}
-                    onClick={() => setSelectedTaskId(task.id)}
-                    onDelete={() => deleteTask(task.id)}
-                  />
-                ))}
+          <button
+            type="button"
+            className={cn(
+              COLUMN_WIDTH[viewOptions.columnWidth],
+              'flex-shrink-0 min-h-[100px] flex items-center justify-center gap-2 text-sm font-medium text-kf-slate hover:bg-kf-white hover:border-kf-divider rounded-[20px] border border-dashed border-kf-divider-gray transition-all bg-kf-white/40',
+            )}
+          >
+            <Plus size={18} />
+            Add column
+          </button>
+        </div>
 
-                {isAddingTask === column.id ? (
-                  <div className="kf-card-elevated p-4 border-kf-meta-blue/25">
-                    <input
-                      autoFocus
-                      className="kf-input mb-4 text-sm"
-                      placeholder="Task title…"
-                      value={newTaskTitle}
-                      onChange={(e) => setNewTaskTitle(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && handleAddTask(column.id)}
-                    />
-                    <div className="flex justify-end gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setIsAddingTask(null)}
-                        className="kf-btn-secondary text-sm !py-2 !px-4"
-                      >
-                        Cancel
-                      </button>
-                      <button type="button" onClick={() => handleAddTask(column.id)} className="kf-btn-primary text-sm !py-2 !px-4">
-                        Add task
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setIsAddingTask(column.id)}
-                    className="w-full py-3 min-h-[44px] flex items-center justify-center gap-2 text-sm font-medium text-kf-slate hover:bg-kf-white hover:text-kf-charcoal rounded-[20px] border border-dashed border-kf-divider-gray transition-all group/addbtn bg-kf-white/60"
-                  >
-                    <Plus size={18} className="group-hover/addbtn:scale-110 transition-transform" />
-                    Add task
-                  </button>
-                )}
-              </div>
-            </div>
-          );
-        })}
-
-        <button
-          type="button"
-          className={cn(
-            COLUMN_WIDTH[viewOptions.columnWidth],
-            'flex-shrink-0 min-h-[100px] flex items-center justify-center gap-2 text-sm font-medium text-kf-slate hover:bg-kf-white hover:border-kf-divider rounded-[20px] border border-dashed border-kf-divider-gray transition-all bg-kf-white/40',
-          )}
-        >
-          <Plus size={18} />
-          Add column
-        </button>
-      </div>
+        <DragOverlay>
+          {activeDragTask ? (
+            <TaskCardBody
+              task={activeDragTask}
+              doneColumnId={doneColumnId}
+              density={viewOptions.cardDensity}
+              showTags={viewOptions.showTagsOnCards}
+              showMeta={viewOptions.showMetaOnCards}
+              onClick={() => {}}
+              onDelete={() => {}}
+              overlay
+            />
+          ) : null}
+        </DragOverlay>
+      </DndContext>
 
       <AnimatePresence>
         {selectedTaskId && <TaskModal taskId={selectedTaskId} onClose={() => setSelectedTaskId(null)} />}
@@ -756,6 +794,135 @@ export default function KanbanView() {
   );
 }
 
+function KanbanColumn({
+  column,
+  columnTasks,
+  totalInColumn,
+  hasFilters,
+  viewOptions,
+  doneColumnId,
+  isAddingTask,
+  newTaskTitle,
+  onNewTaskTitleChange,
+  newTaskPriority,
+  onNewTaskPriorityChange,
+  onStartAddTask,
+  onCancelAddTask,
+  onAddTask,
+  onOpenTask,
+  onDeleteTask,
+  dragActive,
+}: {
+  column: { id: string; title: string };
+  columnTasks: Task[];
+  totalInColumn: number;
+  hasFilters: boolean;
+  viewOptions: BoardViewOptions;
+  doneColumnId: string | null;
+  isAddingTask: boolean;
+  newTaskTitle: string;
+  onNewTaskTitleChange: (value: string) => void;
+  newTaskPriority: Priority;
+  onNewTaskPriorityChange: (value: Priority) => void;
+  onStartAddTask: () => void;
+  onCancelAddTask: () => void;
+  onAddTask: () => void;
+  onOpenTask: (taskId: string) => void;
+  onDeleteTask: (taskId: string) => void;
+  dragActive: boolean;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: column.id });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={cn(
+        COLUMN_WIDTH[viewOptions.columnWidth],
+        'flex-shrink-0 flex flex-col max-h-full rounded-[20px] transition-colors',
+        isOver && 'bg-kf-baby-blue/25',
+      )}
+    >
+      <div className="flex items-center justify-between mb-4 group px-1">
+        <div className="flex items-center gap-2 min-w-0">
+          <h3 className="font-medium text-sm text-kf-charcoal truncate">{column.title}</h3>
+          <span className="bg-kf-warm-gray text-kf-slate text-xs font-medium px-2.5 py-0.5 rounded-full border border-kf-divider-gray shrink-0">
+            {columnTasks.length}
+            {hasFilters && totalInColumn !== columnTasks.length ? (
+              <span className="text-kf-secondary-text font-normal">/{totalInColumn}</span>
+            ) : null}
+          </span>
+        </div>
+        <button
+          type="button"
+          className="text-kf-icon-secondary opacity-0 group-hover:opacity-100 hover:text-kf-charcoal transition-all p-1 rounded-[8px]"
+        >
+          <MoreHorizontal size={18} />
+        </button>
+      </div>
+
+      <SortableContext items={columnTasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
+        <div className="flex-1 overflow-y-auto space-y-3 pr-1 custom-scrollbar min-h-[50px]">
+          {columnTasks.map((task) => (
+            <TaskCard
+              key={task.id}
+              task={task}
+              doneColumnId={doneColumnId}
+              density={viewOptions.cardDensity}
+              showTags={viewOptions.showTagsOnCards}
+              showMeta={viewOptions.showMetaOnCards}
+              onClick={() => onOpenTask(task.id)}
+              onDelete={() => onDeleteTask(task.id)}
+              dragActive={dragActive}
+            />
+          ))}
+
+          {isAddingTask ? (
+            <div className="kf-card-elevated p-4 border-kf-meta-blue/25">
+              <input
+                autoFocus
+                className="kf-input mb-3 text-sm"
+                placeholder="Task title…"
+                value={newTaskTitle}
+                onChange={(e) => onNewTaskTitleChange(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && onAddTask()}
+              />
+              <select
+                className={cn(
+                  'kf-input mb-4 text-xs font-semibold capitalize py-1.5 w-auto',
+                  getPriorityColor(newTaskPriority),
+                )}
+                value={newTaskPriority}
+                onChange={(e) => onNewTaskPriorityChange(e.target.value as Priority)}
+              >
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+              </select>
+              <div className="flex justify-end gap-2">
+                <button type="button" onClick={onCancelAddTask} className="kf-btn-secondary text-sm !py-2 !px-4">
+                  Cancel
+                </button>
+                <button type="button" onClick={onAddTask} className="kf-btn-primary text-sm !py-2 !px-4">
+                  Add task
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={onStartAddTask}
+              className="w-full py-3 min-h-[44px] flex items-center justify-center gap-2 text-sm font-medium text-kf-slate hover:bg-kf-white hover:text-kf-charcoal rounded-[20px] border border-dashed border-kf-divider-gray transition-all group/addbtn bg-kf-white/60"
+            >
+              <Plus size={18} className="group-hover/addbtn:scale-110 transition-transform" />
+              Add task
+            </button>
+          )}
+        </div>
+      </SortableContext>
+    </div>
+  );
+}
+
 function TaskCard({
   task,
   doneColumnId,
@@ -764,7 +931,29 @@ function TaskCard({
   density = 'comfortable',
   showTags = true,
   showMeta = true,
-}: {
+  dragActive = false,
+}: TaskCardProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: task.id });
+  return (
+    <TaskCardBody
+      task={task}
+      doneColumnId={doneColumnId}
+      onClick={onClick}
+      onDelete={onDelete}
+      density={density}
+      showTags={showTags}
+      showMeta={showMeta}
+      innerRef={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      dragAttributes={attributes}
+      dragListeners={listeners}
+      isDragging={isDragging}
+      dragActive={dragActive}
+    />
+  );
+}
+
+interface TaskCardProps {
   task: Task;
   doneColumnId: string | null;
   onClick: () => void;
@@ -772,6 +961,31 @@ function TaskCard({
   density?: 'comfortable' | 'compact';
   showTags?: boolean;
   showMeta?: boolean;
+  dragActive?: boolean;
+}
+
+function TaskCardBody({
+  task,
+  doneColumnId,
+  onClick,
+  onDelete,
+  density = 'comfortable',
+  showTags = true,
+  showMeta = true,
+  innerRef,
+  style,
+  dragAttributes,
+  dragListeners,
+  isDragging = false,
+  dragActive = false,
+  overlay = false,
+}: TaskCardProps & {
+  innerRef?: (el: HTMLElement | null) => void;
+  style?: React.CSSProperties;
+  dragAttributes?: DraggableAttributes;
+  dragListeners?: DraggableSyntheticListeners;
+  isDragging?: boolean;
+  overlay?: boolean;
 }) {
   const { users, tasks } = useApp();
   const assignee = users.find((u) => u.id === task.assigneeId);
@@ -785,11 +999,17 @@ function TaskCard({
 
   return (
     <motion.div
-      layoutId={task.id}
+      layoutId={overlay || dragActive ? undefined : task.id}
+      ref={innerRef}
+      style={style}
+      {...dragAttributes}
+      {...dragListeners}
       onClick={onClick}
       className={cn(
         'kf-card-elevated cursor-grab active:cursor-grabbing group relative overflow-hidden border-kf-divider-gray',
         compact ? 'p-3' : 'p-4',
+        isDragging && 'opacity-40',
+        overlay && 'shadow-2xl rotate-2 cursor-grabbing',
         isBlocked ? 'border-kf-error/40 opacity-90' : 'hover:border-kf-meta-blue/20',
       )}
     >
