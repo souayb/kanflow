@@ -56,7 +56,9 @@ impl ServerConfig {
     pub fn jwks_url(&self) -> Option<String> {
         let url = self.keycloak_url.as_deref()?;
         let realm = self.keycloak_realm.as_deref()?;
-        Some(format!("{url}/realms/{realm}/protocol/openid-connect/certs"))
+        Some(format!(
+            "{url}/realms/{realm}/protocol/openid-connect/certs"
+        ))
     }
 
     /// Expected token issuer (`iss` claim).
@@ -80,7 +82,13 @@ impl GithubConfig {
         let owner_is_org = env::var("GITHUB_OWNER_IS_ORG")
             .map(|s| matches!(s.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes"))
             .unwrap_or(false);
-        Some(Self { token, owner, repo, project_number, owner_is_org })
+        Some(Self {
+            token,
+            owner,
+            repo,
+            project_number,
+            owner_is_org,
+        })
     }
 }
 

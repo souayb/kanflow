@@ -13,6 +13,8 @@ import {
   Target,
   Clock,
   UserPlus,
+  Users,
+  GitPullRequest,
 } from 'lucide-react';
 import { useApp } from '../AppContext';
 import { cn } from '../lib/utils';
@@ -22,11 +24,12 @@ import ProfileDropdown from './ProfileDropdown';
 import ProjectsSidebarBlock from './ProjectsSidebarBlock';
 import LayoutSearchResults from './LayoutSearchResults';
 import AdminCreateUserModal from './AdminCreateUserModal';
+import type { AppView } from '../App';
 
 interface LayoutProps {
   children: React.ReactNode;
-  currentView: 'dashboard' | 'kanban' | 'reporting' | 'todos' | 'time';
-  onViewChange: (view: 'dashboard' | 'kanban' | 'reporting' | 'todos' | 'time') => void;
+  currentView: AppView;
+  onViewChange: (view: AppView) => void;
 }
 
 export default function Layout({ children, currentView, onViewChange }: LayoutProps) {
@@ -87,6 +90,18 @@ export default function Layout({ children, currentView, onViewChange }: LayoutPr
               label="Board"
               active={currentView === 'kanban'}
               onClick={() => onViewChange('kanban')}
+            />
+            <SidebarItem
+              icon={<Users size={20} strokeWidth={1.75} />}
+              label="Collaboration"
+              active={currentView === 'collaboration'}
+              onClick={() => onViewChange('collaboration')}
+            />
+            <SidebarItem
+              icon={<GitPullRequest size={20} strokeWidth={1.75} />}
+              label="Reviews"
+              active={currentView === 'reviews'}
+              onClick={() => onViewChange('reviews')}
             />
             <SidebarItem
               icon={<BarChart3 size={20} strokeWidth={1.75} />}

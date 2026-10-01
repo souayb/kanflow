@@ -13,7 +13,11 @@ use crate::auth::KanflowAuth;
 use crate::state::AppState;
 
 fn pg_unavailable() -> axum::response::Response {
-    (StatusCode::SERVICE_UNAVAILABLE, Json(json!({ "error": "postgres_disabled" }))).into_response()
+    (
+        StatusCode::SERVICE_UNAVAILABLE,
+        Json(json!({ "error": "postgres_disabled" })),
+    )
+        .into_response()
 }
 
 #[derive(FromRow)]
@@ -101,15 +105,13 @@ pub async fn create_user(
         .to_string();
 
     let id = Uuid::new_v4();
-    let res = sqlx::query(
-        "INSERT INTO users (id, name, email, role) VALUES ($1, $2, $3, $4)",
-    )
-    .bind(id)
-    .bind(name)
-    .bind(&email)
-    .bind(&role)
-    .execute(pool)
-    .await;
+    let res = sqlx::query("INSERT INTO users (id, name, email, role) VALUES ($1, $2, $3, $4)")
+        .bind(id)
+        .bind(name)
+        .bind(&email)
+        .bind(&role)
+        .execute(pool)
+        .await;
 
     match res {
         Ok(_) => (

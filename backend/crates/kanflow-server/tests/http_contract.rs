@@ -104,7 +104,11 @@ async fn list_columns_no_pg_returns_503() {
 #[tokio::test]
 async fn create_column_no_pg_returns_503() {
     let id = uuid::Uuid::new_v4();
-    let (status, _) = post(&format!("/api/v1/projects/{id}/columns"), r#"{"title":"Todo"}"#).await;
+    let (status, _) = post(
+        &format!("/api/v1/projects/{id}/columns"),
+        r#"{"title":"Todo"}"#,
+    )
+    .await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
 }
 

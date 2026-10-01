@@ -18,7 +18,12 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(pg: Option<PgPool>, mongo: Option<Database>, auth: Option<Arc<AuthConfig>>) -> Self {
-        Self { pg, mongo, auth, github: None }
+        Self {
+            pg,
+            mongo,
+            auth,
+            github: None,
+        }
     }
 
     /// Attach a configured GitHub client (builder-style, used at startup).

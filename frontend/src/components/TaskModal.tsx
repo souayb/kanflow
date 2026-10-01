@@ -39,8 +39,23 @@ function buildAppliedDescriptionFromAi(r: TaskEnhancementResult): string {
 }
 
 export default function TaskModal({ taskId, onClose }: TaskModalProps) {
-  const { tasks, users, projects, updateTask, deleteTask, addComment, addDependency, addNotification, currentUser } =
-    useApp();
+  const {
+    tasks,
+    users,
+    projects,
+    updateTask,
+    deleteTask,
+    addComment,
+    addDependency,
+    addNotification,
+    currentUser,
+    githubStatus,
+    createTaskBranch,
+    createTaskPr,
+    linkTaskPr,
+    refreshTaskPr,
+    workSessions,
+  } = useApp();
   const task = tasks.find((t) => t.id === taskId);
   const [commentText, setCommentText] = useState('');
   const [isRefining, setIsRefining] = useState(false);
@@ -48,19 +63,97 @@ export default function TaskModal({ taskId, onClose }: TaskModalProps) {
   const [aiError, setAiError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'details' | 'comments' | 'ai' | 'dependencies'>('details');
   const [newTag, setNewTag] = useState('');
+  const [isCreatingBranch, setIsCreatingBranch] = useState(false);
+  const [branchError, setBranchError] = useState<string | null>(null);
+  const [isPrBusy, setIsPrBusy] = useState(false);
+  const [prError, setPrError] = useState<string | null>(null);
+  const [linkPrInput, setLinkPrInput] = useState('');
+  const [showLinkPr, setShowLinkPr] = useState(false);
 
   useEffect(() => {
     setNewTag('');
   }, [taskId]);
 
-  if (!task) return null;
-
-  const taskProject = projects.find((p) => p.id === task.projectId);
+  const taskProject = projects.find((p) => p.id === task?.projectId);
   const columnsSorted = useMemo(
     () => [...(taskProject?.columns ?? [])].sort((a, b) => a.order - b.order),
     [taskProject],
   );
   const doneColumnId = columnsSorted.length ? columnsSorted[columnsSorted.length - 1].id : null;
+
+  if (!task) return null;
+
+  const handleCreateBranch = async () => {
+    setBranchError(null);
+    setIsCreatingBranch(true);
+    try {
+      await createTaskBranch(taskId);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : '';
+      setBranchError(
+        message === 'github_branch_failed'
+          ? 'GitHub rejected the branch (it may already exist).'
+          : message === 'github_not_connected'
+            ? 'GitHub is not connected on this server.'
+            : 'Could not create the branch.',
+      );
+    } finally {
+      setIsCreatingBranch(false);
+    }
+  };
+
+  const handleCreatePr = async () => {
+    setPrError(null);
+    setIsPrBusy(true);
+    try {
+      await createTaskPr(taskId);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : '';
+      setPrError(
+        message === 'github_branch_required'
+          ? 'Create a branch before opening a PR.'
+          : message === 'github_pr_failed'
+            ? 'GitHub rejected the pull request.'
+            : message === 'github_not_connected'
+              ? 'GitHub is not connected on this server.'
+              : 'Could not create the pull request.',
+      );
+    } finally {
+      setIsPrBusy(false);
+    }
+  };
+
+  const handleLinkPr = async () => {
+    const n = Number(linkPrInput.trim());
+    if (!Number.isInteger(n) || n <= 0) {
+      setPrError('Enter a valid PR number.');
+      return;
+    }
+    setPrError(null);
+    setIsPrBusy(true);
+    try {
+      await linkTaskPr(taskId, n);
+      setShowLinkPr(false);
+      setLinkPrInput('');
+    } catch (e) {
+      const message = e instanceof Error ? e.message : '';
+      setPrError(message === 'github_pr_failed' ? 'Could not find that PR on GitHub.' : 'Could not link the PR.');
+    } finally {
+      setIsPrBusy(false);
+    }
+  };
+
+  const handleRefreshPr = async () => {
+    setPrError(null);
+    setIsPrBusy(true);
+    try {
+      await refreshTaskPr(taskId);
+    } catch {
+      setPrError('Could not refresh PR status.');
+    } finally {
+      setIsPrBusy(false);
+    }
+  };
 
   const assignee = users.find((u) => u.id === task.assigneeId);
   const availableTasks = tasks.filter(
@@ -317,6 +410,132 @@ export default function TaskModal({ taskId, onClose }: TaskModalProps) {
                   ))}
                 </select>
               </div>
+
+              {githubStatus.connected && (
+                <div className="space-y-2">
+                  <span className="text-kf-slate block">GitHub</span>
+                  <div className="flex items-center gap-3 flex-wrap py-2">
+                    {task.githubIssueUrl && (
+                      <a
+                        href={task.githubIssueUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center gap-1.5 text-sm font-medium text-kf-meta-blue hover:text-kf-meta-blue-hover"
+                      >
+                        <LinkIcon size={14} strokeWidth={1.75} />
+                        Issue #{task.githubIssueNumber}
+                      </a>
+                    )}
+                    {task.githubBranchUrl ? (
+                      <a
+                        href={task.githubBranchUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center gap-1.5 text-sm font-medium text-kf-meta-blue hover:text-kf-meta-blue-hover"
+                      >
+                        <LinkIcon size={14} strokeWidth={1.75} />
+                        {task.githubBranchName}
+                      </a>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleCreateBranch}
+                        disabled={isCreatingBranch}
+                        className="kf-btn-secondary text-xs !py-1.5 !px-3 gap-1.5 disabled:opacity-60"
+                      >
+                        {isCreatingBranch ? (
+                          <Loader2 size={13} className="animate-spin" />
+                        ) : (
+                          <LinkIcon size={13} strokeWidth={1.75} />
+                        )}
+                        Create branch
+                      </button>
+                    )}
+                    {task.githubPrUrl ? (
+                      <>
+                        <a
+                          href={task.githubPrUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="flex items-center gap-1.5 text-sm font-medium text-kf-meta-blue hover:text-kf-meta-blue-hover"
+                        >
+                          <LinkIcon size={14} strokeWidth={1.75} />
+                          PR #{task.githubPrNumber}
+                          {task.githubPrState ? ` · ${task.githubPrState}` : ''}
+                        </a>
+                        <button
+                          type="button"
+                          onClick={handleRefreshPr}
+                          disabled={isPrBusy}
+                          className="kf-btn-secondary text-xs !py-1.5 !px-3 gap-1.5 disabled:opacity-60"
+                        >
+                          {isPrBusy ? <Loader2 size={13} className="animate-spin" /> : null}
+                          Sync PR
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        {task.githubBranchName && (
+                          <button
+                            type="button"
+                            onClick={handleCreatePr}
+                            disabled={isPrBusy}
+                            className="kf-btn-secondary text-xs !py-1.5 !px-3 gap-1.5 disabled:opacity-60"
+                          >
+                            {isPrBusy ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+                            Create PR
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setShowLinkPr((v) => !v)}
+                          className="kf-btn-secondary text-xs !py-1.5 !px-3"
+                        >
+                          Link PR
+                        </button>
+                      </>
+                    )}
+                  </div>
+                  {showLinkPr && !task.githubPrUrl && (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min={1}
+                        className="kf-input text-xs py-1.5 w-28"
+                        placeholder="PR #"
+                        value={linkPrInput}
+                        onChange={(e) => setLinkPrInput(e.target.value)}
+                      />
+                      <button
+                        type="button"
+                        onClick={handleLinkPr}
+                        disabled={isPrBusy}
+                        className="kf-btn-primary text-xs !py-1.5 !px-3 disabled:opacity-60"
+                      >
+                        Link
+                      </button>
+                    </div>
+                  )}
+                  {branchError && <p className="text-[11px] text-kf-error">{branchError}</p>}
+                  {prError && <p className="text-[11px] text-kf-error">{prError}</p>}
+                </div>
+              )}
+              {(() => {
+                const session = workSessions.find(
+                  (s) => s.taskId === task.id && Date.now() - s.heartbeatAt < 24 * 60 * 60 * 1000,
+                );
+                if (!session) return null;
+                return (
+                  <div className="space-y-1">
+                    <span className="text-kf-slate block text-xs">Work session</span>
+                    <p className="text-[11px] text-kf-slate">
+                      {session.actorKind}
+                      {session.tool ? ` / ${session.tool}` : ''} · {session.phase}
+                      {session.intent ? ` — ${session.intent}` : ''}
+                    </p>
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Tabs */}

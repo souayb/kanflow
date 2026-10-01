@@ -97,6 +97,13 @@ Task {
   updatedAt: number
   aiSuggested?: boolean
   aiThinking?: string
+  githubIssueNumber?: number
+  githubIssueUrl?: string
+  githubBranchName?: string
+  githubBranchUrl?: string
+  githubPrNumber?: number
+  githubPrUrl?: string
+  githubPrState?: 'draft' | 'open' | 'approved' | 'changes' | 'merged' | 'closed'
 }
 ```
 
@@ -111,6 +118,10 @@ Comment {
   createdAt: number
 }
 ```
+
+#### WorkSession / ActivityEvent
+
+See §5.12 for full schemas (`ActorKind`, phases, overlap findings).
 
 #### Notification
 
@@ -313,6 +324,51 @@ ChatMessage {
 
 ---
 
+### 5.12 Collaboration overview (agent-aware)
+
+Inspired by [AgentBoardMCP](https://github.com/Svrn-alpha/AgentBoardMCP) product surfaces (not its git-ref storage).
+
+#### Domain
+
+```ts
+ActorKind = 'human' | 'agent'
+WorkSessionPhase = 'exploring' | 'implementing' | 'testing' | 'pr_open' | 'review' | 'blocked'
+WorkSessionTool = 'cursor' | 'claude' | 'codex' | 'ollama' | 'human'
+
+WorkSession {
+  id, projectId, taskId?, ownerUserId, actorKind, tool?
+  intent, phase, touchedFiles[], plannedFiles[], branchName?
+  heartbeatAt, createdAt, updatedAt
+}
+
+ActivityEvent {
+  id, projectId, actorId, actorKind, action, taskId?, path?, message, createdAt
+}
+
+OverlapFinding { kind: 'file_overlap' | 'issue_collision' | 'shared_branch', sessionId, otherSessionId, detail, paths?, issueNumber? }
+```
+
+* **Active** session: `heartbeatAt` within 2 hours. **Stale**: 2–24h (informational). Older sessions are ignored in overlap warnings.
+* **View:** `collaboration` — `CollaborationView`: Needs you (overlaps for current user), Who is working (sessions grouped by owner), Repo map (folders from `touchedFiles` colored by owner), Live (last 2h activity).
+* **API:** `GET/POST /api/v1/projects/:id/sessions`, `PATCH/DELETE /api/v1/sessions/:id`, `GET /api/v1/projects/:id/activity`
+* Task create/update/comment and session claim/release append `ActivityEvent`s. Dashboard “Recent activity” reads the same feed.
+* Overlaps (v1): shared touched/planned paths; same linked GitHub issue on two sessions’ tasks; same `branchName`.
+* Offline: `kanflow_work_sessions` / `kanflow_activity_events` localStorage; seed includes a demo agent session.
+
+---
+
+### 5.13 GitHub PR reviews
+
+* Task fields: `githubPrNumber`, `githubPrUrl`, `githubPrState` (`draft` | `open` | `approved` | `changes` | `merged` | `closed`)
+* Requires an existing `githubBranchName`. Endpoints:
+  * `POST /api/v1/tasks/:id/github-pr` — create PR (head = branch, base = repo default)
+  * `POST /api/v1/tasks/:id/github-pr/link` — `{ number }` attach existing PR
+  * `POST /api/v1/tasks/:id/github-pr/refresh` — re-fetch state from GitHub
+* **UI:** TaskModal Create/Link PR + status badge; **Reviews** view lists tasks in a column titled Review **or** with `githubPrState` in `open|approved|changes`.
+* When a PR is created successfully and a column titled `Review` exists, move the task into that column. When refreshed state is `merged` and a `Done` column exists, move the task there.
+
+---
+
 ## 6. State Management
 
 ### Client State Shape (AppContext)
@@ -347,6 +403,8 @@ AppContextType {
 |------|-----------|-----------|
 | Kanban Board | `kanban` | `KanbanView` |
 | Dashboard | `dashboard` | `DashboardView` |
+| Collaboration | `collaboration` | `CollaborationView` |
+| Reviews | `reviews` | `ReviewsView` |
 | Reporting | `reporting` | `ReportingView` |
 | Personal Todos | `todos` | `PersonalTodoView` |
 | Time Keeping | `time` | `TimeKeepingView` |
@@ -450,7 +508,8 @@ See `DESIGN.md` for the full Meta-inspired design system.
 * Full API sync for projects/tasks (replace or mirror localStorage)
 * Real-time multi-user collaboration (WebSocket or SSE against Kanflow server)
 * File attachments on tasks
-* Activity log / audit trail
+* Thin stdio MCP for claim/check/release against Kanflow sessions API (agents today can use REST)
+* Line-level merge-tree conflict prediction (AgentBoardMCP specialty)
 * Push notifications
 * Mobile responsive layout
 * Advanced AI: auto-assign, deadline prediction, workload balancing

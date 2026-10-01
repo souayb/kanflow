@@ -14,7 +14,9 @@ use tracing_subscriber::EnvFilter;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env().add_directive("kanflow_server=info".parse()?))
+        .with_env_filter(
+            EnvFilter::from_default_env().add_directive("kanflow_server=info".parse()?),
+        )
         .init();
 
     let cfg = ServerConfig::from_env();
@@ -56,7 +58,9 @@ async fn main() -> anyhow::Result<()> {
         }
         Some(ac)
     } else {
-        tracing::warn!("KEYCLOAK_URL / KEYCLOAK_REALM not set — auth disabled (all requests permitted)");
+        tracing::warn!(
+            "KEYCLOAK_URL / KEYCLOAK_REALM not set — auth disabled (all requests permitted)"
+        );
         None
     };
 
