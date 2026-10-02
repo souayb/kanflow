@@ -37,7 +37,9 @@ pub async fn list_chat(
     };
     let coll = db.collection::<Document>(COLL_CHAT);
     let filter = doc! { "project_id": &project_id };
-    let opts = FindOptions::builder().sort(doc! { "created_at": 1 }).build();
+    let opts = FindOptions::builder()
+        .sort(doc! { "created_at": 1 })
+        .build();
     let mut cur = match coll.find(filter).with_options(opts).await {
         Ok(c) => c,
         Err(e) => return json_err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
@@ -78,8 +80,14 @@ pub async fn append_chat(
     let Some(db) = &state.mongo else {
         return json_err(StatusCode::SERVICE_UNAVAILABLE, "mongo_disabled");
     };
-    let user_id = body.get("user_id").and_then(|v| v.as_str()).unwrap_or("anonymous");
-    let user_name = body.get("user_name").and_then(|v| v.as_str()).unwrap_or("Anonymous");
+    let user_id = body
+        .get("user_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("anonymous");
+    let user_name = body
+        .get("user_name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Anonymous");
     let content = body.get("content").and_then(|v| v.as_str()).unwrap_or("");
     if content.is_empty() {
         return json_err(StatusCode::BAD_REQUEST, "content_required");
@@ -109,7 +117,10 @@ pub async fn get_config(axum::extract::State(state): axum::extract::State<AppSta
     let coll = db.collection::<Document>(COLL_CONFIG);
     match coll.find_one(doc! { "_id": "default" }).await {
         Ok(Some(d)) => {
-            let payload = d.get("payload").cloned().unwrap_or(mongodb::bson::Bson::Null);
+            let payload = d
+                .get("payload")
+                .cloned()
+                .unwrap_or(mongodb::bson::Bson::Null);
             let v: serde_json::Value = mongodb::bson::from_bson(payload).unwrap_or(json!({}));
             axum::Json(json!({ "config": v })).into_response()
         }
@@ -131,9 +142,16 @@ pub async fn put_config(
         Ok(b) => b,
         Err(e) => return json_err(StatusCode::BAD_REQUEST, e.to_string()),
     };
-    let doc = doc! { "_id": "default", "payload": payload, "updated_at": mongodb::bson::DateTime::now() };
-    let opts = mongodb::options::ReplaceOptions::builder().upsert(true).build();
-    if let Err(e) = coll.replace_one(doc! { "_id": "default" }, doc).with_options(opts).await {
+    let doc =
+        doc! { "_id": "default", "payload": payload, "updated_at": mongodb::bson::DateTime::now() };
+    let opts = mongodb::options::ReplaceOptions::builder()
+        .upsert(true)
+        .build();
+    if let Err(e) = coll
+        .replace_one(doc! { "_id": "default" }, doc)
+        .with_options(opts)
+        .await
+    {
         return json_err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string());
     }
     axum::Json(json!({ "status": "saved" })).into_response()
@@ -165,8 +183,14 @@ pub async fn post_blob(
         "payload": bson_payload,
         "updated_at": mongodb::bson::DateTime::now(),
     };
-    let opts = mongodb::options::ReplaceOptions::builder().upsert(true).build();
-    if let Err(e) = coll.replace_one(doc! { "_id": key }, doc).with_options(opts).await {
+    let opts = mongodb::options::ReplaceOptions::builder()
+        .upsert(true)
+        .build();
+    if let Err(e) = coll
+        .replace_one(doc! { "_id": key }, doc)
+        .with_options(opts)
+        .await
+    {
         return json_err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string());
     }
     axum::Json(json!({ "status": "stored", "key": key })).into_response()

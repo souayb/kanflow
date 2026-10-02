@@ -11,11 +11,33 @@ import {
   type Comment,
   type IntegrationSettings,
   type DashboardChartWindowDays,
+  type WorkSession,
+  type ActivityEvent,
+  type OverlapFinding,
+  type ActorKind,
+  type WorkSessionPhase,
+  type WorkSessionTool,
   DEFAULT_INTEGRATION_SETTINGS,
 } from './types';
-import { MOCK_PROJECTS, MOCK_TASKS, MOCK_USERS, MOCK_USER_ALEX } from './constants';
+import {
+  MOCK_PROJECTS,
+  MOCK_TASKS,
+  MOCK_USERS,
+  MOCK_USER_ALEX,
+  MOCK_WORK_SESSIONS,
+  MOCK_ACTIVITY_EVENTS,
+} from './constants';
 import { KANFLOW_KEYS, migrateZenithToKanflow, readStoredJson, writeStoredJson } from './lib/storage';
-import { api, type ApiTask, type ApiProject, type ApiColumn, type ApiUserRow } from './lib/api';
+import {
+  api,
+  type ApiTask,
+  type ApiProject,
+  type ApiColumn,
+  type ApiUserRow,
+  type ApiWorkSession,
+  type ApiActivityEvent,
+  type GithubIntegrationStatus,
+} from './lib/api';
 
 interface AppContextType {
   projects: Project[];
@@ -25,12 +47,33 @@ interface AppContextType {
   personalTodos: PersonalTodo[];
   timeEntries: TimeEntry[];
   dashboardWidgets: DashboardWidget[];
+  workSessions: WorkSession[];
+  activityEvents: ActivityEvent[];
+  overlaps: OverlapFinding[];
   activeProjectId: string | null;
   apiOnline: boolean;
+  githubStatus: GithubIntegrationStatus;
+  refreshGithubStatus: () => Promise<void>;
   setActiveProjectId: (id: string | null) => void;
-  addTask: (task: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'comments'>) => void;
+  addTask: (task: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'comments' | 'position'> & { position?: number }) => void;
   updateTask: (id: string, updates: Partial<Task>) => void;
   deleteTask: (id: string) => void;
+  createTaskBranch: (taskId: string) => Promise<void>;
+  createTaskPr: (taskId: string) => Promise<void>;
+  linkTaskPr: (taskId: string, number: number) => Promise<void>;
+  refreshTaskPr: (taskId: string) => Promise<void>;
+  refreshCollaboration: () => Promise<void>;
+  claimWorkSession: (input: {
+    intent: string;
+    taskId?: string;
+    actorKind?: ActorKind;
+    tool?: WorkSessionTool;
+    phase?: WorkSessionPhase;
+    touchedFiles?: string[];
+    plannedFiles?: string[];
+    branchName?: string;
+  }) => Promise<void>;
+  releaseWorkSession: (sessionId: string) => Promise<void>;
   addComment: (taskId: string, userId: string, content: string) => void;
   addNotification: (notification: Omit<Notification, 'id' | 'createdAt' | 'read'>) => void;
   markNotificationAsRead: (id: string) => void;
@@ -43,7 +86,7 @@ interface AppContextType {
   stopTimeLog: (taskId: string) => void;
   getTimeEntriesForTask: (taskId: string) => TimeEntry[];
   updateDashboardWidgets: (widgets: DashboardWidget[]) => void;
-  updateUser: (updates: Partial<User>) => void;
+  updateUser: (updates: Partial<Pick<User, 'name' | 'avatar' | 'privacy'>>) => Promise<void>;
   /** Inserts into Postgres (admin realm role) and refreshes the in-memory user directory. */
   createUserAdmin: (body: { name: string; email: string; role?: string }) => Promise<ApiUserRow>;
   activeTimer: { taskId: string; startTime: number } | null;
@@ -51,8 +94,8 @@ interface AppContextType {
   addProject: (name: string, description: string) => Promise<void>;
   updateProject: (id: string, updates: Partial<Pick<Project, 'name' | 'description'>>) => void;
   deleteProject: (id: string) => void;
-  addProjectTeamMember: (projectId: string, userId: string) => void;
-  removeProjectTeamMember: (projectId: string, userId: string) => void;
+  addProjectTeamMember: (projectId: string, userId: string) => Promise<void>;
+  removeProjectTeamMember: (projectId: string, userId: string) => Promise<void>;
   /** Header search — filters tasks across projects in the layout dropdown. */
   globalSearchQuery: string;
   setGlobalSearchQuery: (q: string) => void;
@@ -94,6 +137,7 @@ function apiTaskToTask(t: ApiTask): Task {
     dueDate: t.dueDate,
     projectId: t.projectId,
     tags: t.tags ?? [],
+    position: t.position ?? 0,
     comments: (t.comments ?? []).map((c) => ({
       id: c.id,
       userId: c.userId,
@@ -106,7 +150,96 @@ function apiTaskToTask(t: ApiTask): Task {
     dependencies: t.dependencies ?? [],
     aiSuggested: t.aiSuggested,
     aiThinking: t.aiThinking,
+    githubIssueNumber: t.githubIssueNumber,
+    githubIssueUrl: t.githubIssueUrl,
+    githubBranchName: t.githubBranchName,
+    githubBranchUrl: t.githubBranchUrl,
+    githubPrNumber: t.githubPrNumber,
+    githubPrUrl: t.githubPrUrl,
+    githubPrState: t.githubPrState,
   };
+}
+
+function apiSessionToSession(s: ApiWorkSession): WorkSession {
+  return {
+    id: s.id,
+    projectId: s.projectId,
+    taskId: s.taskId,
+    ownerUserId: s.ownerUserId,
+    actorKind: s.actorKind,
+    tool: s.tool as WorkSessionTool | undefined,
+    intent: s.intent,
+    phase: s.phase as WorkSessionPhase,
+    touchedFiles: s.touchedFiles ?? [],
+    plannedFiles: s.plannedFiles ?? [],
+    branchName: s.branchName,
+    heartbeatAt: s.heartbeatAt,
+    createdAt: s.createdAt,
+    updatedAt: s.updatedAt,
+  };
+}
+
+function apiActivityToActivity(e: ApiActivityEvent): ActivityEvent {
+  return {
+    id: e.id,
+    projectId: e.projectId,
+    actorId: e.actorId,
+    actorKind: e.actorKind,
+    action: e.action as ActivityEvent['action'],
+    taskId: e.taskId,
+    path: e.path,
+    message: e.message,
+    createdAt: e.createdAt,
+  };
+}
+
+function computeLocalOverlaps(sessions: WorkSession[], tasks: Task[]): OverlapFinding[] {
+  const now = Date.now();
+  const active = sessions.filter((s) => now - s.heartbeatAt < 2 * 60 * 60 * 1000);
+  const issueByTask = new Map(
+    tasks.filter((t) => t.githubIssueNumber != null).map((t) => [t.id, t.githubIssueNumber!]),
+  );
+  const out: OverlapFinding[] = [];
+  for (let i = 0; i < active.length; i++) {
+    for (let j = i + 1; j < active.length; j++) {
+      const a = active[i]!;
+      const b = active[j]!;
+      const pa = new Set([...a.touchedFiles, ...a.plannedFiles]);
+      const pb = new Set([...b.touchedFiles, ...b.plannedFiles]);
+      const shared = [...pa].filter((p) => pb.has(p));
+      if (shared.length) {
+        out.push({
+          kind: 'file_overlap',
+          sessionId: a.id,
+          otherSessionId: b.id,
+          detail: `${shared.length} shared path(s)`,
+          paths: shared,
+        });
+      }
+      if (a.branchName && a.branchName === b.branchName) {
+        out.push({
+          kind: 'shared_branch',
+          sessionId: a.id,
+          otherSessionId: b.id,
+          detail: `Same branch ${a.branchName}`,
+        });
+      }
+      if (a.taskId && b.taskId) {
+        const ia = issueByTask.get(a.taskId);
+        const ib = issueByTask.get(b.taskId);
+        if (ia != null && ia === ib) {
+          out.push({
+            kind: 'issue_collision',
+            sessionId: a.id,
+            otherSessionId: b.id,
+            detail: `Same GitHub issue #${ia}`,
+            issueNumber: ia,
+          });
+        }
+      }
+    }
+  }
+  return out;
 }
 
 function apiColumnToColumn(c: ApiColumn): Column {
@@ -140,6 +273,8 @@ function loadCachedState() {
       personalTodos: [] as PersonalTodo[],
       timeEntries: [] as TimeEntry[],
       dashboardWidgets: DEFAULT_WIDGETS,
+      workSessions: MOCK_WORK_SESSIONS,
+      activityEvents: MOCK_ACTIVITY_EVENTS,
       activeProjectId: MOCK_PROJECTS[0]?.id ?? null,
       currentUser: MOCK_USERS[0] ?? null,
       integrationSettings: DEFAULT_INTEGRATION_SETTINGS,
@@ -162,6 +297,8 @@ function loadCachedState() {
   const personalTodos = readStoredJson<PersonalTodo[]>(KANFLOW_KEYS.todos) ?? [];
   const timeEntries = readStoredJson<TimeEntry[]>(KANFLOW_KEYS.timeEntries) ?? [];
   const dashboardWidgets = readStoredJson<DashboardWidget[]>(KANFLOW_KEYS.dashboardWidgets) ?? DEFAULT_WIDGETS;
+  const workSessions = readStoredJson<WorkSession[]>(KANFLOW_KEYS.workSessions) ?? MOCK_WORK_SESSIONS;
+  const activityEvents = readStoredJson<ActivityEvent[]>(KANFLOW_KEYS.activityEvents) ?? MOCK_ACTIVITY_EVENTS;
   const currentUser = readStoredJson<User>(KANFLOW_KEYS.user) ?? MOCK_USERS[0] ?? null;
 
   let activeProjectId = localStorage.getItem(KANFLOW_KEYS.activeProjectId);
@@ -174,20 +311,29 @@ function loadCachedState() {
   const mergedIntegrations: IntegrationSettings = {
     ...DEFAULT_INTEGRATION_SETTINGS,
     ...integrations,
-    github: { ...DEFAULT_INTEGRATION_SETTINGS.github, ...integrations.github },
+    calendar: { ...DEFAULT_INTEGRATION_SETTINGS.calendar, ...integrations.calendar },
   };
 
   const rawDays = localStorage.getItem(KANFLOW_KEYS.dashboardChartDays);
   const dashboardChartDays: DashboardChartWindowDays =
     rawDays === '14' || rawDays === '30' ? (Number(rawDays) as DashboardChartWindowDays) : 7;
 
+  // Ensure plan tickets exist even when older localStorage caches omit them.
+  const taskIds = new Set(tasks.map((t) => t.id));
+  const withTickets = [
+    ...tasks,
+    ...MOCK_TASKS.filter((t) => !taskIds.has(t.id) && (t.id === 'd1000000-0000-4000-8000-000000000004' || t.id === 'd1000000-0000-4000-8000-000000000005')),
+  ];
+
   return {
     projects,
-    tasks,
+    tasks: withTickets,
     notifications,
     personalTodos,
     timeEntries,
     dashboardWidgets,
+    workSessions,
+    activityEvents,
     activeProjectId,
     currentUser,
     integrationSettings: mergedIntegrations,
@@ -206,30 +352,56 @@ export function AppProvider({ children, kcUser }: { children: React.ReactNode; k
   const [personalTodos, setPersonalTodos] = useState<PersonalTodo[]>(initial.personalTodos);
   const [timeEntries, setTimeEntries] = useState<TimeEntry[]>(initial.timeEntries);
   const [dashboardWidgets, setDashboardWidgets] = useState<DashboardWidget[]>(initial.dashboardWidgets);
+  const [workSessions, setWorkSessions] = useState<WorkSession[]>(initial.workSessions);
+  const [activityEvents, setActivityEvents] = useState<ActivityEvent[]>(initial.activityEvents);
+  const [overlaps, setOverlaps] = useState<OverlapFinding[]>(() =>
+    computeLocalOverlaps(initial.workSessions, initial.tasks),
+  );
   const [activeTimer, setActiveTimer] = useState<{ taskId: string; startTime: number } | null>(null);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(initial.activeProjectId);
   // Prefer the Keycloak-authenticated user; fall back to localStorage/mock
   const [currentUser, setCurrentUser] = useState<User | null>(kcUser ?? initial.currentUser);
   const [apiOnline, setApiOnline] = useState(false);
+  const [githubStatus, setGithubStatus] = useState<GithubIntegrationStatus>({ connected: false });
   const [globalSearchQuery, setGlobalSearchQuery] = useState('');
   const [pendingOpenTaskId, setPendingOpenTaskId] = useState<string | null>(null);
   const [boardNavSeq, setBoardNavSeq] = useState(0);
   const [integrationSettings, setIntegrationSettingsState] = useState<IntegrationSettings>(initial.integrationSettings);
   const [dashboardChartDays, setDashboardChartDaysState] = useState<DashboardChartWindowDays>(initial.dashboardChartDays);
 
-  // Sync kcUser into currentUser whenever it changes (e.g. after token refresh)
+  // Keycloak owns identity; preserve app-owned profile/privacy fields on token refresh.
   useEffect(() => {
-    if (kcUser) setCurrentUser(kcUser);
+    if (kcUser) {
+      setCurrentUser((previous) => ({
+        ...previous,
+        ...kcUser,
+        avatar: previous?.avatar,
+        privacy: previous?.privacy,
+      }));
+    }
   }, [kcUser]);
+
+  const refreshGithubStatus = useCallback(async () => {
+    try {
+      setGithubStatus(await api.getGithubStatus());
+    } catch {
+      setGithubStatus({ connected: false });
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshGithubStatus();
+  }, [refreshGithubStatus, apiOnline]);
 
   // ── Bootstrap from API ───────────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const [{ projects: apiProjects }, usersRes] = await Promise.all([
+        const [{ projects: apiProjects }, usersRes, meRes] = await Promise.all([
           api.getProjects(),
           api.getUsers().catch(() => ({ users: [] as ApiUserRow[] })),
+          api.getMe().catch(() => null),
         ]);
         if (cancelled) return;
 
@@ -240,8 +412,17 @@ export function AppProvider({ children, kcUser }: { children: React.ReactNode; k
               name: u.name,
               email: u.email,
               role: u.role,
+              avatar: u.avatar,
+              privacy: u.privacy,
             })),
           );
+        }
+        if (meRes?.user) {
+          setCurrentUser((previous) => ({
+            ...previous,
+            ...meRes.user,
+            privacy: meRes.user.privacy ?? previous?.privacy,
+          }));
         }
 
         const hydratedProjects: Project[] = await Promise.all(
@@ -314,6 +495,8 @@ export function AppProvider({ children, kcUser }: { children: React.ReactNode; k
   useEffect(() => { writeStoredJson(KANFLOW_KEYS.todos, personalTodos); }, [personalTodos]);
   useEffect(() => { writeStoredJson(KANFLOW_KEYS.timeEntries, timeEntries); }, [timeEntries]);
   useEffect(() => { writeStoredJson(KANFLOW_KEYS.dashboardWidgets, dashboardWidgets); }, [dashboardWidgets]);
+  useEffect(() => { writeStoredJson(KANFLOW_KEYS.workSessions, workSessions); }, [workSessions]);
+  useEffect(() => { writeStoredJson(KANFLOW_KEYS.activityEvents, activityEvents); }, [activityEvents]);
   useEffect(() => { if (currentUser) writeStoredJson(KANFLOW_KEYS.user, currentUser); }, [currentUser]);
   useEffect(() => {
     if (activeProjectId) localStorage.setItem(KANFLOW_KEYS.activeProjectId, activeProjectId);
@@ -333,12 +516,20 @@ export function AppProvider({ children, kcUser }: { children: React.ReactNode; k
 
   // ── Task mutations ───────────────────────────────────────────────────────
   const addTask = useCallback(
-    (taskData: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'comments'>) => {
+    (
+      taskData: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'comments' | 'position'> & {
+        position?: number;
+      },
+    ) => {
       const tempId = Math.random().toString(36).substring(2, 11);
       const now = Date.now();
+      const position =
+        taskData.position ??
+        Math.max(0, ...tasks.filter((t) => t.status === taskData.status).map((t) => t.position)) + 1000;
       const newTask: Task = {
         ...taskData,
         id: tempId,
+        position,
         createdAt: now,
         updatedAt: now,
         comments: [],
@@ -366,15 +557,25 @@ export function AppProvider({ children, kcUser }: { children: React.ReactNode; k
             dependencies: taskData.dependencies ?? [],
             assigneeId: taskData.assigneeId,
             dueDate: taskData.dueDate,
+            position,
           })
           .then(({ task }) => {
-            // Swap temp ID for server-assigned ID
-            setTasks((prev) => prev.map((t) => (t.id === tempId ? { ...t, id: task.id } : t)));
+            setTasks((prev) =>
+              prev.map((local) =>
+                local.id === tempId
+                  ? {
+                      ...apiTaskToTask(task),
+                      comments: local.comments,
+                      dependencies: local.dependencies,
+                    }
+                  : local,
+              ),
+            );
           })
           .catch(() => {/* keep optimistic state */});
       }
     },
-    [apiOnline, addNotification, currentUser],
+    [apiOnline, addNotification, currentUser, tasks],
   );
 
   const updateTask = useCallback(
@@ -398,6 +599,165 @@ export function AppProvider({ children, kcUser }: { children: React.ReactNode; k
       }
     },
     [apiOnline],
+  );
+
+  const createTaskBranch = useCallback(async (taskId: string) => {
+    const { task } = await api.createTaskBranch(taskId);
+    setTasks((prev) => prev.map((t) => (t.id === taskId ? apiTaskToTask(task) : t)));
+  }, []);
+
+  const createTaskPr = useCallback(async (taskId: string) => {
+    const { task } = await api.createTaskPr(taskId);
+    setTasks((prev) => prev.map((t) => (t.id === taskId ? apiTaskToTask(task) : t)));
+  }, []);
+
+  const linkTaskPr = useCallback(async (taskId: string, number: number) => {
+    const { task } = await api.linkTaskPr(taskId, number);
+    setTasks((prev) => prev.map((t) => (t.id === taskId ? apiTaskToTask(task) : t)));
+  }, []);
+
+  const refreshTaskPr = useCallback(async (taskId: string) => {
+    const { task } = await api.refreshTaskPr(taskId);
+    setTasks((prev) => prev.map((t) => (t.id === taskId ? apiTaskToTask(task) : t)));
+  }, []);
+
+  const pushLocalActivity = useCallback(
+    (partial: Omit<ActivityEvent, 'id' | 'createdAt'>) => {
+      const event: ActivityEvent = {
+        ...partial,
+        id: Math.random().toString(36).substring(2, 11),
+        createdAt: Date.now(),
+      };
+      setActivityEvents((prev) => [event, ...prev].slice(0, 200));
+    },
+    [],
+  );
+
+  const refreshCollaboration = useCallback(async () => {
+    if (!activeProjectId) return;
+    if (!apiOnline) {
+      setOverlaps(computeLocalOverlaps(workSessions, tasks));
+      return;
+    }
+    try {
+      const [sess, act] = await Promise.all([
+        api.listSessions(activeProjectId),
+        api.listActivity(activeProjectId),
+      ]);
+      setWorkSessions(sess.sessions.map(apiSessionToSession));
+      setOverlaps(
+        (sess.overlaps ?? []).map((o) => ({
+          kind: o.kind,
+          sessionId: o.sessionId,
+          otherSessionId: o.otherSessionId,
+          detail: o.detail,
+          paths: o.paths,
+          issueNumber: o.issueNumber,
+        })),
+      );
+      setActivityEvents(act.events.map(apiActivityToActivity));
+    } catch {
+      setOverlaps(computeLocalOverlaps(workSessions, tasks));
+    }
+  }, [activeProjectId, apiOnline, workSessions, tasks]);
+
+  useEffect(() => {
+    if (!activeProjectId) return;
+    void refreshCollaboration();
+    // Intentionally when project / online flips — not on every session edit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeProjectId, apiOnline]);
+
+  const claimWorkSession = useCallback(
+    async (input: {
+      intent: string;
+      taskId?: string;
+      actorKind?: ActorKind;
+      tool?: WorkSessionTool;
+      phase?: WorkSessionPhase;
+      touchedFiles?: string[];
+      plannedFiles?: string[];
+      branchName?: string;
+    }) => {
+      if (!activeProjectId || !currentUser) return;
+      if (apiOnline) {
+        const { session } = await api.claimSession(activeProjectId, {
+          ownerUserId: currentUser.id,
+          actorKind: input.actorKind ?? 'human',
+          tool: input.tool,
+          intent: input.intent,
+          phase: input.phase ?? 'implementing',
+          taskId: input.taskId,
+          touchedFiles: input.touchedFiles,
+          plannedFiles: input.plannedFiles,
+          branchName: input.branchName,
+        });
+        setWorkSessions((prev) => {
+          const next = [apiSessionToSession(session), ...prev.filter((s) => s.id !== session.id)];
+          setOverlaps(computeLocalOverlaps(next, tasks));
+          return next;
+        });
+        await refreshCollaboration();
+        return;
+      }
+      const now = Date.now();
+      const session: WorkSession = {
+        id: Math.random().toString(36).substring(2, 11),
+        projectId: activeProjectId,
+        taskId: input.taskId,
+        ownerUserId: currentUser.id,
+        actorKind: input.actorKind ?? 'human',
+        tool: input.tool ?? 'human',
+        intent: input.intent,
+        phase: input.phase ?? 'implementing',
+        touchedFiles: input.touchedFiles ?? [],
+        plannedFiles: input.plannedFiles ?? [],
+        branchName: input.branchName,
+        heartbeatAt: now,
+        createdAt: now,
+        updatedAt: now,
+      };
+      setWorkSessions((prev) => {
+        const next = [session, ...prev];
+        setOverlaps(computeLocalOverlaps(next, tasks));
+        return next;
+      });
+      pushLocalActivity({
+        projectId: activeProjectId,
+        actorId: currentUser.id,
+        actorKind: session.actorKind,
+        action: 'session_claimed',
+        taskId: input.taskId,
+        path: session.touchedFiles[0],
+        message: `Claimed: ${input.intent}`,
+      });
+    },
+    [activeProjectId, currentUser, apiOnline, tasks, refreshCollaboration, pushLocalActivity],
+  );
+
+  const releaseWorkSession = useCallback(
+    async (sessionId: string) => {
+      const existing = workSessions.find((s) => s.id === sessionId);
+      if (apiOnline) {
+        await api.releaseSession(sessionId);
+      }
+      setWorkSessions((prev) => {
+        const next = prev.filter((s) => s.id !== sessionId);
+        setOverlaps(computeLocalOverlaps(next, tasks));
+        return next;
+      });
+      if (existing && currentUser) {
+        pushLocalActivity({
+          projectId: existing.projectId,
+          actorId: currentUser.id,
+          actorKind: existing.actorKind,
+          action: 'session_released',
+          taskId: existing.taskId,
+          message: 'Released work session',
+        });
+      }
+    },
+    [apiOnline, workSessions, tasks, currentUser, pushLocalActivity],
   );
 
   const addComment = useCallback(
@@ -620,7 +980,9 @@ export function AppProvider({ children, kcUser }: { children: React.ReactNode; k
     [apiOnline, projects],
   );
 
-  const addProjectTeamMember = useCallback((projectId: string, userId: string) => {
+  const addProjectTeamMember = useCallback(async (projectId: string, userId: string) => {
+    if (!apiOnline) throw new Error('API is offline');
+    await api.addProjectMember(projectId, userId);
     setProjects((prev) =>
       prev.map((p) => {
         if (p.id !== projectId) return p;
@@ -629,9 +991,11 @@ export function AppProvider({ children, kcUser }: { children: React.ReactNode; k
         return { ...p, memberIds: Array.from(cur) };
       }),
     );
-  }, []);
+  }, [apiOnline]);
 
-  const removeProjectTeamMember = useCallback((projectId: string, userId: string) => {
+  const removeProjectTeamMember = useCallback(async (projectId: string, userId: string) => {
+    if (!apiOnline) throw new Error('API is offline');
+    await api.removeProjectMember(projectId, userId);
     setProjects((prev) =>
       prev.map((p) => {
         if (p.id !== projectId) return p;
@@ -641,7 +1005,7 @@ export function AppProvider({ children, kcUser }: { children: React.ReactNode; k
         return { ...p, memberIds: Array.from(cur) };
       }),
     );
-  }, []);
+  }, [apiOnline]);
 
   const clearPendingOpenTask = useCallback(() => {
     setPendingOpenTaskId(null);
@@ -665,7 +1029,7 @@ export function AppProvider({ children, kcUser }: { children: React.ReactNode; k
         return {
           ...prev,
           ...patch,
-          github: { ...prev.github, ...(patch.github ?? {}) },
+          calendar: { ...prev.calendar, ...(patch.calendar ?? {}) },
         };
       });
     },
@@ -688,9 +1052,28 @@ export function AppProvider({ children, kcUser }: { children: React.ReactNode; k
     }
   }, [dashboardChartDays]);
 
-  const updateUser = useCallback((updates: Partial<User>) => {
-    setCurrentUser((prev) => (prev ? { ...prev, ...updates } : null));
-  }, []);
+  const updateUser = useCallback(
+    async (updates: Partial<Pick<User, 'name' | 'avatar' | 'privacy'>>) => {
+      const previous = currentUser;
+      setCurrentUser((current) => (current ? { ...current, ...updates } : null));
+      if (!apiOnline) return;
+      try {
+        const { user } = await api.updateMe(updates);
+        setCurrentUser((current) =>
+          current
+            ? { ...current, ...user, privacy: user.privacy ?? current.privacy }
+            : null,
+        );
+        setUsers((rows) =>
+          rows.map((row) => (row.id === user.id ? { ...row, ...user } : row)),
+        );
+      } catch (error) {
+        setCurrentUser(previous);
+        throw error;
+      }
+    },
+    [apiOnline, currentUser],
+  );
 
   const createUserAdmin = useCallback(async (body: { name: string; email: string; role?: string }) => {
     const { user } = await api.createUser(body);
@@ -711,12 +1094,24 @@ export function AppProvider({ children, kcUser }: { children: React.ReactNode; k
         personalTodos,
         timeEntries,
         dashboardWidgets,
+        workSessions,
+        activityEvents,
+        overlaps,
         activeProjectId,
         apiOnline,
+        githubStatus,
+        refreshGithubStatus,
         setActiveProjectId,
         addTask,
         updateTask,
         deleteTask,
+        createTaskBranch,
+        createTaskPr,
+        linkTaskPr,
+        refreshTaskPr,
+        refreshCollaboration,
+        claimWorkSession,
+        releaseWorkSession,
         addComment,
         addNotification,
         markNotificationAsRead,

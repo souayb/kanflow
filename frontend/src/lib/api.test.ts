@@ -31,6 +31,62 @@ describe('api client', () => {
     });
   });
 
+  describe('integrations and profile', () => {
+    it('reads the authoritative GitHub connection status', async () => {
+      mockFetch(200, {
+        connected: true,
+        configured: true,
+        owner: 'souayb',
+        repo: 'kanflow',
+        defaultBranch: 'main',
+      });
+      const result = await api.getGithubStatus();
+      expect(result).toMatchObject({ connected: true, repo: 'kanflow' });
+      expect(vi.mocked(fetch)).toHaveBeenCalledWith(
+        expect.stringContaining('/api/v1/integrations/github'),
+        expect.any(Object),
+      );
+    });
+
+    it('updates the authenticated app profile', async () => {
+      const fetchSpy = vi.fn().mockResolvedValue({
+        status: 200,
+        ok: true,
+        statusText: 'OK',
+        json: async () => ({
+          user: { id: 'u1', name: 'New name', email: 'a@b.com', role: 'member' },
+        }),
+      } as Response);
+      vi.stubGlobal('fetch', fetchSpy);
+
+      await api.updateMe({ name: 'New name' });
+      const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+      expect(url).toContain('/api/v1/users/me');
+      expect(init.method).toBe('PATCH');
+      expect(JSON.parse(init.body as string)).toEqual({ name: 'New name' });
+    });
+
+    it('configures GitHub without reading the token back', async () => {
+      const fetchSpy = vi.fn().mockResolvedValue({
+        status: 200,
+        ok: true,
+        statusText: 'OK',
+        json: async () => ({ connected: true, configured: true, owner: 'acme', repo: 'app' }),
+      } as Response);
+      vi.stubGlobal('fetch', fetchSpy);
+
+      await api.configureGithub({ token: 'secret', owner: 'acme', repo: 'app' });
+      const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+      expect(url).toContain('/api/v1/integrations/github');
+      expect(init.method).toBe('POST');
+      expect(JSON.parse(init.body as string)).toEqual({
+        token: 'secret',
+        owner: 'acme',
+        repo: 'app',
+      });
+    });
+  });
+
   describe('createProject', () => {
     it('posts to /api/v1/projects with name', async () => {
       const fetchSpy = vi.fn().mockResolvedValue({
@@ -46,6 +102,21 @@ describe('api client', () => {
       expect(url).toContain('/api/v1/projects');
       expect(init.method).toBe('POST');
       expect(JSON.parse(init.body as string)).toEqual({ name: 'New' });
+    });
+  });
+
+  describe('project members', () => {
+    it('persists an added teammate', async () => {
+      const fetchSpy = vi.fn().mockResolvedValue({
+        status: 204, ok: true, statusText: 'No Content', json: async () => undefined,
+      } as Response);
+      vi.stubGlobal('fetch', fetchSpy);
+
+      await api.addProjectMember('p1', 'u1');
+      const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+      expect(url).toContain('/api/v1/projects/p1/members');
+      expect(init.method).toBe('POST');
+      expect(JSON.parse(init.body as string)).toEqual({ userId: 'u1' });
     });
   });
 

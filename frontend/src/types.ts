@@ -14,9 +14,20 @@ export interface User {
   email: string;
   avatar?: string;
   role: string;
-  twoFactorEnabled?: boolean;
-  passwordLastChanged?: number;
+  privacy?: PrivacySettings;
 }
+
+export interface PrivacySettings {
+  activityVisibility: 'project' | 'private';
+  showOnlineStatus: boolean;
+  allowAnalytics: boolean;
+}
+
+export const DEFAULT_PRIVACY_SETTINGS: PrivacySettings = {
+  activityVisibility: 'project',
+  showOnlineStatus: true,
+  allowAnalytics: false,
+};
 
 export type WidgetType = 'overview' | 'activity' | 'performance' | 'upcoming' | 'ai_insights';
 
@@ -46,12 +57,89 @@ export interface Task {
   dueDate?: number;
   projectId: string;
   tags: string[];
+  /** Manual sort position within its column (drag-and-drop order). */
+  position: number;
   comments: Comment[];
   createdAt: number;
   updatedAt: number;
   dependencies: string[]; // List of task IDs this task depends on
   aiSuggested?: boolean;
   aiThinking?: string;
+  githubIssueNumber?: number;
+  githubIssueUrl?: string;
+  githubBranchName?: string;
+  githubBranchUrl?: string;
+  githubPrNumber?: number;
+  githubPrUrl?: string;
+  githubPrState?: GithubPrState;
+}
+
+export type GithubPrState = 'draft' | 'open' | 'approved' | 'changes' | 'merged' | 'closed';
+
+export type ActorKind = 'human' | 'agent';
+
+export type WorkSessionPhase =
+  | 'exploring'
+  | 'implementing'
+  | 'testing'
+  | 'pr_open'
+  | 'review'
+  | 'blocked';
+
+export type WorkSessionTool = 'cursor' | 'claude' | 'codex' | 'ollama' | 'human';
+
+/** AgentBoardMCP-style work card: who is working on what (MISSION §5.12). */
+export interface WorkSession {
+  id: string;
+  projectId: string;
+  taskId?: string;
+  ownerUserId: string;
+  actorKind: ActorKind;
+  tool?: WorkSessionTool;
+  intent: string;
+  phase: WorkSessionPhase;
+  touchedFiles: string[];
+  plannedFiles: string[];
+  branchName?: string;
+  heartbeatAt: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export type OverlapKind = 'file_overlap' | 'issue_collision' | 'shared_branch';
+
+export interface OverlapFinding {
+  kind: OverlapKind;
+  sessionId: string;
+  otherSessionId: string;
+  detail: string;
+  paths?: string[];
+  issueNumber?: number;
+}
+
+export type ActivityAction =
+  | 'task_created'
+  | 'task_updated'
+  | 'task_moved'
+  | 'comment_added'
+  | 'ai_applied'
+  | 'session_claimed'
+  | 'session_released'
+  | 'pr_opened'
+  | 'pr_updated'
+  | 'file_touched';
+
+/** Project-scoped audit / blame feed (MISSION §5.12). */
+export interface ActivityEvent {
+  id: string;
+  projectId: string;
+  actorId: string;
+  actorKind: ActorKind;
+  action: ActivityAction;
+  taskId?: string;
+  path?: string;
+  message: string;
+  createdAt: number;
 }
 
 export interface Column {
@@ -121,15 +209,14 @@ export interface TimeEntry {
 
 /** Persisted in localStorage (`kanflow_integrations`). */
 export interface IntegrationSettings {
-  github: {
-    enabled: boolean;
-    repoUrl: string;
-    defaultBranch: string;
+  calendar: {
+    assignedOnly: boolean;
+    includeCompleted: boolean;
   };
 }
 
 export const DEFAULT_INTEGRATION_SETTINGS: IntegrationSettings = {
-  github: { enabled: true, repoUrl: '', defaultBranch: 'main' },
+  calendar: { assignedOnly: true, includeCompleted: false },
 };
 
 export type DashboardChartWindowDays = 7 | 14 | 30;

@@ -16,12 +16,16 @@ interface AuthContextValue {
   authenticated: boolean;
   kcUser: User | null;
   logout: () => void;
+  manageAccount: () => void;
+  updatePassword: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue>({
   authenticated: false,
   kcUser: null,
   logout: () => {},
+  manageAccount: () => {},
+  updatePassword: () => {},
 });
 
 export function useAuth(): AuthContextValue {
@@ -109,6 +113,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = () =>
     keycloak.logout({ redirectUri: window.location.origin });
+  const manageAccount = () => {
+    void keycloak.accountManagement();
+  };
+  const updatePassword = () => {
+    void keycloak.login({ action: 'UPDATE_PASSWORD' });
+  };
 
   if (status === 'loading') {
     return <LoadingScreen message="Connecting to Keycloak…" />;
@@ -118,7 +128,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ authenticated: !!kcUser, kcUser, logout }}>
+    <AuthContext.Provider
+      value={{ authenticated: !!kcUser, kcUser, logout, manageAccount, updatePassword }}
+    >
       {children}
     </AuthContext.Provider>
   );

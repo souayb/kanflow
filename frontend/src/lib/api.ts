@@ -3,7 +3,9 @@
  * Falls back gracefully — callers should catch errors and use localStorage cache.
  */
 
-const BASE: string = (import.meta as any).env?.VITE_API_URL ?? 'http://localhost:8080';
+const BASE: string =
+  (import.meta as any).env?.VITE_API_URL ??
+  ((import.meta as any).env?.DEV ? 'http://localhost:8080' : '');
 
 // ── Auth token getter (set by AuthProvider once Keycloak initialises) ─────────
 
@@ -54,6 +56,12 @@ export interface ApiUserRow {
   name: string;
   email: string;
   role: string;
+  avatar?: string;
+  privacy?: {
+    activityVisibility: 'project' | 'private';
+    showOnlineStatus: boolean;
+    allowAnalytics: boolean;
+  };
 }
 
 export interface ApiTask {
@@ -66,12 +74,69 @@ export interface ApiTask {
   assigneeId?: string;
   dueDate?: number;      // Unix ms
   tags: string[];
+  position: number;
   comments: ApiComment[];
   dependencies: string[];
   createdAt: number;
   updatedAt: number;
   aiSuggested?: boolean;
   aiThinking?: string;
+  githubIssueNumber?: number;
+  githubIssueUrl?: string;
+  githubBranchName?: string;
+  githubBranchUrl?: string;
+  githubPrNumber?: number;
+  githubPrUrl?: string;
+  githubPrState?: 'draft' | 'open' | 'approved' | 'changes' | 'merged' | 'closed';
+}
+
+export interface ApiWorkSession {
+  id: string;
+  projectId: string;
+  taskId?: string;
+  ownerUserId: string;
+  actorKind: 'human' | 'agent';
+  tool?: string;
+  intent: string;
+  phase: string;
+  touchedFiles: string[];
+  plannedFiles: string[];
+  branchName?: string;
+  heartbeatAt: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ApiOverlapFinding {
+  kind: 'file_overlap' | 'issue_collision' | 'shared_branch';
+  sessionId: string;
+  otherSessionId: string;
+  detail: string;
+  paths?: string[];
+  issueNumber?: number;
+}
+
+export interface ApiActivityEvent {
+  id: string;
+  projectId: string;
+  actorId: string;
+  actorKind: 'human' | 'agent';
+  action: string;
+  taskId?: string;
+  path?: string;
+  message: string;
+  createdAt: number;
+}
+
+export interface GithubIntegrationStatus {
+  connected: boolean;
+  configured?: boolean;
+  appAvailable?: boolean;
+  authMethod?: 'pat' | 'github_app';
+  owner?: string;
+  repo?: string;
+  defaultBranch?: string;
+  error?: 'connection_failed';
 }
 
 /**
@@ -81,7 +146,7 @@ export interface ApiTask {
 export function buildTaskPatchBody(updates: Partial<ApiTask>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   const u = updates as Record<string, unknown>;
-  for (const key of ['title', 'description', 'priority', 'status', 'tags'] as const) {
+  for (const key of ['title', 'description', 'priority', 'status', 'tags', 'position'] as const) {
     if (key in updates && u[key] !== undefined) out[key] = u[key];
   }
   if ('dueDate' in updates) out.dueDate = u.dueDate == null ? 0 : u.dueDate;
@@ -119,6 +184,18 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
+  getMe: () => apiFetch<{ user: ApiUserRow }>('/api/v1/users/me'),
+
+  updateMe: (body: {
+    name?: string;
+    avatar?: string;
+    privacy?: ApiUserRow['privacy'];
+  }) =>
+    apiFetch<{ user: ApiUserRow }>('/api/v1/users/me', {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+
   // Projects
   getProjects: () =>
     apiFetch<{ projects: ApiProject[] }>('/api/v1/projects'),
@@ -135,6 +212,17 @@ export const api = {
 
   deleteProject: (id: string) =>
     apiFetch<void>(`/api/v1/projects/${id}`, { method: 'DELETE' }),
+
+  addProjectMember: (projectId: string, userId: string) =>
+    apiFetch<void>(`/api/v1/projects/${projectId}/members`, {
+      method: 'POST',
+      body: JSON.stringify({ userId }),
+    }),
+
+  removeProjectMember: (projectId: string, userId: string) =>
+    apiFetch<void>(`/api/v1/projects/${projectId}/members/${userId}`, {
+      method: 'DELETE',
+    }),
 
   // Columns
   getColumns: (projectId: string) =>
@@ -157,7 +245,10 @@ export const api = {
   getTasks: (projectId: string) =>
     apiFetch<{ tasks: ApiTask[] }>(`/api/v1/projects/${projectId}/tasks`),
 
-  createTask: (projectId: string, body: Omit<ApiTask, 'id' | 'createdAt' | 'updatedAt' | 'comments'>) =>
+  createTask: (
+    projectId: string,
+    body: Omit<ApiTask, 'id' | 'createdAt' | 'updatedAt' | 'comments' | 'position'> & { position?: number },
+  ) =>
     apiFetch<{ task: ApiTask }>(`/api/v1/projects/${projectId}/tasks`, {
       method: 'POST', body: JSON.stringify(body),
     }),
@@ -170,6 +261,97 @@ export const api = {
 
   deleteTask: (id: string) =>
     apiFetch<void>(`/api/v1/tasks/${id}`, { method: 'DELETE' }),
+
+  createTaskBranch: (taskId: string) =>
+    apiFetch<{ task: ApiTask }>(`/api/v1/tasks/${taskId}/github-branch`, { method: 'POST' }),
+
+  createTaskPr: (taskId: string) =>
+    apiFetch<{ task: ApiTask }>(`/api/v1/tasks/${taskId}/github-pr`, { method: 'POST' }),
+
+  linkTaskPr: (taskId: string, number: number) =>
+    apiFetch<{ task: ApiTask }>(`/api/v1/tasks/${taskId}/github-pr/link`, {
+      method: 'POST',
+      body: JSON.stringify({ number }),
+    }),
+
+  refreshTaskPr: (taskId: string) =>
+    apiFetch<{ task: ApiTask }>(`/api/v1/tasks/${taskId}/github-pr/refresh`, { method: 'POST' }),
+
+  // Collaboration
+  listSessions: (projectId: string) =>
+    apiFetch<{ sessions: ApiWorkSession[]; overlaps: ApiOverlapFinding[] }>(
+      `/api/v1/projects/${projectId}/sessions`,
+    ),
+
+  claimSession: (
+    projectId: string,
+    body: {
+      ownerUserId: string;
+      actorKind?: string;
+      tool?: string;
+      intent?: string;
+      phase?: string;
+      taskId?: string;
+      touchedFiles?: string[];
+      plannedFiles?: string[];
+      branchName?: string;
+      sessionId?: string;
+    },
+  ) =>
+    apiFetch<{ session: ApiWorkSession }>(`/api/v1/projects/${projectId}/sessions`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  updateSession: (
+    sessionId: string,
+    body: Partial<{
+      intent: string;
+      phase: string;
+      taskId: string;
+      touchedFiles: string[];
+      plannedFiles: string[];
+      branchName: string;
+      tool: string;
+      heartbeat: boolean;
+    }>,
+  ) =>
+    apiFetch<{ session: ApiWorkSession }>(`/api/v1/sessions/${sessionId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+
+  releaseSession: (sessionId: string) =>
+    apiFetch<void>(`/api/v1/sessions/${sessionId}`, { method: 'DELETE' }),
+
+  listActivity: (projectId: string) =>
+    apiFetch<{ events: ApiActivityEvent[] }>(`/api/v1/projects/${projectId}/activity`),
+
+  // Integrations
+  getGithubStatus: () => apiFetch<GithubIntegrationStatus>('/api/v1/integrations/github'),
+  configureGithub: (body: {
+    token: string;
+    owner: string;
+    repo: string;
+    projectNumber?: number;
+    ownerIsOrg?: boolean;
+  }) =>
+    apiFetch<GithubIntegrationStatus>('/api/v1/integrations/github', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  startGithubAuth: (body: {
+    owner: string;
+    repo: string;
+    projectNumber?: number;
+    ownerIsOrg?: boolean;
+  }) =>
+    apiFetch<{ authorizeUrl: string }>('/api/v1/integrations/github/authorize', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  disconnectGithub: () =>
+    apiFetch<void>('/api/v1/integrations/github', { method: 'DELETE' }),
 
   // Comments
   addComment: (taskId: string, body: { user_id: string; user_name: string; content: string }) =>

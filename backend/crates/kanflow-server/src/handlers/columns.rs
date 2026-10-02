@@ -24,7 +24,11 @@ fn col_json(c: &ColumnRow) -> serde_json::Value {
 }
 
 fn pg_unavailable() -> axum::response::Response {
-    (StatusCode::SERVICE_UNAVAILABLE, Json(json!({ "error": "postgres_disabled" }))).into_response()
+    (
+        StatusCode::SERVICE_UNAVAILABLE,
+        Json(json!({ "error": "postgres_disabled" })),
+    )
+        .into_response()
 }
 
 // ── GET /api/v1/projects/:project_id/columns ─────────────────────────────────
@@ -33,7 +37,9 @@ pub async fn list_columns(
     State(state): State<AppState>,
     Path(project_id): Path<Uuid>,
 ) -> impl IntoResponse {
-    let Some(pool) = &state.pg else { return pg_unavailable() };
+    let Some(pool) = &state.pg else {
+        return pg_unavailable();
+    };
     match sqlx::query_as::<_, ColumnRow>(
         "SELECT id, project_id, title, sort_order FROM columns WHERE project_id = $1 ORDER BY sort_order ASC",
     )
@@ -60,10 +66,16 @@ pub async fn create_column(
     Path(project_id): Path<Uuid>,
     Json(body): Json<CreateColumnBody>,
 ) -> impl IntoResponse {
-    let Some(pool) = &state.pg else { return pg_unavailable() };
+    let Some(pool) = &state.pg else {
+        return pg_unavailable();
+    };
     let title = body.title.trim();
     if title.is_empty() {
-        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "title_required" }))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "title_required" })),
+        )
+            .into_response();
     }
     match sqlx::query_as::<_, ColumnRow>(
         "INSERT INTO columns (project_id, title, sort_order) VALUES ($1, $2, $3)
@@ -76,7 +88,11 @@ pub async fn create_column(
     .await
     {
         Ok(c) => (StatusCode::CREATED, Json(json!({ "column": col_json(&c) }))).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        )
+            .into_response(),
     }
 }
 
@@ -93,7 +109,9 @@ pub async fn update_column(
     Path((_project_id, column_id)): Path<(Uuid, Uuid)>,
     Json(body): Json<UpdateColumnBody>,
 ) -> impl IntoResponse {
-    let Some(pool) = &state.pg else { return pg_unavailable() };
+    let Some(pool) = &state.pg else {
+        return pg_unavailable();
+    };
     // Fetch current to merge
     let current = sqlx::query_as::<_, ColumnRow>(
         "SELECT id, project_id, title, sort_order FROM columns WHERE id = $1",
@@ -103,10 +121,24 @@ pub async fn update_column(
     .await;
     let current = match current {
         Ok(Some(c)) => c,
-        Ok(None) => return (StatusCode::NOT_FOUND, Json(json!({ "error": "not_found" }))).into_response(),
-        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
+        Ok(None) => {
+            return (StatusCode::NOT_FOUND, Json(json!({ "error": "not_found" }))).into_response()
+        }
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": e.to_string() })),
+            )
+                .into_response()
+        }
     };
-    let new_title = body.title.as_deref().map(str::trim).filter(|s| !s.is_empty()).unwrap_or(&current.title).to_string();
+    let new_title = body
+        .title
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(&current.title)
+        .to_string();
     let new_order = body.order.unwrap_or(current.sort_order);
     match sqlx::query_as::<_, ColumnRow>(
         "UPDATE columns SET title = $1, sort_order = $2 WHERE id = $3
@@ -119,7 +151,11 @@ pub async fn update_column(
     .await
     {
         Ok(c) => Json(json!({ "column": col_json(&c) })).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        )
+            .into_response(),
     }
 }
 
@@ -129,7 +165,9 @@ pub async fn delete_column(
     State(state): State<AppState>,
     Path((_project_id, column_id)): Path<(Uuid, Uuid)>,
 ) -> impl IntoResponse {
-    let Some(pool) = &state.pg else { return pg_unavailable() };
+    let Some(pool) = &state.pg else {
+        return pg_unavailable();
+    };
     match sqlx::query("DELETE FROM columns WHERE id = $1")
         .bind(column_id)
         .execute(pool)
@@ -139,6 +177,10 @@ pub async fn delete_column(
             (StatusCode::NOT_FOUND, Json(json!({ "error": "not_found" }))).into_response()
         }
         Ok(_) => StatusCode::NO_CONTENT.into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        )
+            .into_response(),
     }
 }
