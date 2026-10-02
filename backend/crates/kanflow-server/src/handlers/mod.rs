@@ -11,10 +11,15 @@ pub use collaboration::{
 };
 pub use columns::{create_column, delete_column, list_columns, update_column};
 pub use health::health;
-pub use integrations::github_status;
-pub use projects::{create_project, delete_project, list_projects, update_project};
+pub use integrations::{
+    configure_github, disconnect_github, github_auth_callback, github_status, start_github_auth,
+};
+pub use projects::{
+    add_project_member, create_project, delete_project, list_projects, remove_project_member,
+    update_project,
+};
 pub use tasks::{
     create_comment, create_task, create_task_branch, create_task_pr, delete_task, link_task_pr,
     list_tasks, refresh_task_pr, update_task,
 };
-pub use users::{create_user, list_users};
+pub use users::{create_user, get_me, list_users, update_me};

@@ -14,9 +14,20 @@ export interface User {
   email: string;
   avatar?: string;
   role: string;
-  twoFactorEnabled?: boolean;
-  passwordLastChanged?: number;
+  privacy?: PrivacySettings;
 }
+
+export interface PrivacySettings {
+  activityVisibility: 'project' | 'private';
+  showOnlineStatus: boolean;
+  allowAnalytics: boolean;
+}
+
+export const DEFAULT_PRIVACY_SETTINGS: PrivacySettings = {
+  activityVisibility: 'project',
+  showOnlineStatus: true,
+  allowAnalytics: false,
+};
 
 export type WidgetType = 'overview' | 'activity' | 'performance' | 'upcoming' | 'ai_insights';
 
@@ -198,15 +209,14 @@ export interface TimeEntry {
 
 /** Persisted in localStorage (`kanflow_integrations`). */
 export interface IntegrationSettings {
-  github: {
-    enabled: boolean;
-    repoUrl: string;
-    defaultBranch: string;
+  calendar: {
+    assignedOnly: boolean;
+    includeCompleted: boolean;
   };
 }
 
 export const DEFAULT_INTEGRATION_SETTINGS: IntegrationSettings = {
-  github: { enabled: true, repoUrl: '', defaultBranch: 'main' },
+  calendar: { assignedOnly: true, includeCompleted: false },
 };
 
 export type DashboardChartWindowDays = 7 | 14 | 30;

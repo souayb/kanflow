@@ -48,8 +48,11 @@ User {
   email: string
   avatar?: string
   role: string
-  twoFactorEnabled?: boolean
-  passwordLastChanged?: number
+  privacy?: {
+    activityVisibility: 'project' | 'private'
+    showOnlineStatus: boolean
+    allowAnalytics: boolean
+  }
 }
 ```
 
@@ -359,6 +362,9 @@ OverlapFinding { kind: 'file_overlap' | 'issue_collision' | 'shared_branch', ses
 
 ### 5.13 GitHub PR reviews
 
+* GitHub connection state is authoritative from `GET /api/v1/integrations/github`, which verifies the configured token/repository against GitHub and reports the default branch.
+* Preferred connection: GitHub App user authorization (`/authorize` → GitHub → `/callback`), with PAT setup retained as a fallback. Disconnecting a GitHub App connection revokes its token at GitHub.
+* Docker serves the API through same-origin `/api` so browser clients do not depend on a baked host port.
 * Task fields: `githubPrNumber`, `githubPrUrl`, `githubPrState` (`draft` | `open` | `approved` | `changes` | `merged` | `closed`)
 * Requires an existing `githubBranchName`. Endpoints:
   * `POST /api/v1/tasks/:id/github-pr` — create PR (head = branch, base = repo default)
@@ -366,6 +372,15 @@ OverlapFinding { kind: 'file_overlap' | 'issue_collision' | 'shared_branch', ses
   * `POST /api/v1/tasks/:id/github-pr/refresh` — re-fetch state from GitHub
 * **UI:** TaskModal Create/Link PR + status badge; **Reviews** view lists tasks in a column titled Review **or** with `githubPrState` in `open|approved|changes`.
 * When a PR is created successfully and a column titled `Review` exists, move the task into that column. When refreshed state is `merged` and a `Done` column exists, move the task there.
+
+---
+
+### 5.14 Calendar, profile, and privacy
+
+* **Calendar:** export task due dates as a standards-compliant iCalendar (`.ics`) file for Apple Calendar, Google Calendar, and Outlook. Filters for assigned-only and completed tasks persist locally.
+* **Profile:** `GET/PATCH /api/v1/users/me` persists app-owned display name, avatar URL, and privacy settings by authenticated Keycloak email.
+* **Security:** passwords and MFA are managed only in Keycloak; Kanflow never stores password or 2FA state.
+* **Privacy:** users can hide online/session presence, make activity private, and opt in/out of anonymous analytics. Collaboration endpoints enforce online and activity visibility server-side.
 
 ---
 

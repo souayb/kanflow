@@ -15,6 +15,7 @@ import {
   UserPlus,
   Users,
   GitPullRequest,
+  RefreshCw,
 } from 'lucide-react';
 import { useApp } from '../AppContext';
 import { cn } from '../lib/utils';
@@ -24,6 +25,9 @@ import ProfileDropdown from './ProfileDropdown';
 import ProjectsSidebarBlock from './ProjectsSidebarBlock';
 import LayoutSearchResults from './LayoutSearchResults';
 import AdminCreateUserModal from './AdminCreateUserModal';
+import CalendarIntegrationModal from './CalendarIntegrationModal';
+import GithubIntegrationModal from './GithubIntegrationModal';
+import { useAuth } from './AuthProvider';
 import type { AppView } from '../App';
 
 interface LayoutProps {
@@ -41,14 +45,17 @@ export default function Layout({ children, currentView, onViewChange }: LayoutPr
     globalSearchQuery,
     setGlobalSearchQuery,
     openTaskOnBoard,
-    integrationSettings,
-    setIntegrationSettings,
+    githubStatus,
+    refreshGithubStatus,
     currentUser,
     apiOnline,
   } = useApp();
+  const { logout } = useAuth();
   const [isNotificationsOpen, setIsNotificationsOpen] = React.useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(true);
   const [adminUserModalOpen, setAdminUserModalOpen] = React.useState(false);
+  const [calendarModalOpen, setCalendarModalOpen] = React.useState(false);
+  const [githubModalOpen, setGithubModalOpen] = React.useState(false);
   const searchWrapRef = React.useRef<HTMLDivElement>(null);
 
   const activeProject = projects.find((p) => p.id === activeProjectId);
@@ -130,54 +137,56 @@ export default function Layout({ children, currentView, onViewChange }: LayoutPr
           <div className="px-6 md:px-8 py-6 border-t border-kf-divider-gray">
             <div className="text-xs text-kf-secondary-text font-medium mb-3 tracking-tight">Integrations</div>
             <div className="space-y-4">
-              <div className="rounded-xl border border-kf-divider-gray bg-kf-soft-gray/50 p-3 space-y-2">
+              <div className="rounded-xl border border-kf-divider-gray bg-kf-soft-gray/50 p-3">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2 min-w-0">
                     <div className="p-2 rounded-[10px] bg-kf-warm-gray border border-kf-divider-gray text-kf-icon-secondary shrink-0">
                       <Github size={14} />
                     </div>
-                    <span className="text-xs font-medium text-kf-slate truncate">GitHub</span>
+                    <div className="min-w-0">
+                      <div className="text-xs font-medium text-kf-slate truncate">GitHub</div>
+                      <div className="text-[10px] text-kf-secondary-text truncate">
+                        {githubStatus.connected
+                          ? `${githubStatus.owner}/${githubStatus.repo} · ${githubStatus.defaultBranch}`
+                          : githubStatus.configured
+                            ? 'Connection failed'
+                          : apiOnline
+                            ? 'Server setup required'
+                            : 'API offline'}
+                      </div>
+                    </div>
                   </div>
-                  <label className="flex items-center gap-1.5 shrink-0 text-[10px] font-semibold uppercase tracking-wide text-kf-slate cursor-pointer">
-                    <input
-                      type="checkbox"
-                      className="rounded border-kf-divider-gray text-kf-meta-blue focus:ring-kf-meta-blue/30"
-                      checked={integrationSettings.github.enabled}
-                      onChange={(e) =>
-                        setIntegrationSettings({
-                          github: { ...integrationSettings.github, enabled: e.target.checked },
-                        })
-                      }
-                    />
-                    On
-                  </label>
+                  <button
+                    type="button"
+                    onClick={() => void refreshGithubStatus()}
+                    className="p-2 text-kf-slate hover:text-kf-meta-blue"
+                    aria-label="Refresh GitHub connection"
+                  >
+                    <RefreshCw size={13} />
+                  </button>
                 </div>
-                <input
-                  type="url"
-                  className="kf-input text-xs py-1.5 w-full"
-                  placeholder="https://github.com/org/repo"
-                  value={integrationSettings.github.repoUrl}
-                  disabled={!integrationSettings.github.enabled}
-                  onChange={(e) =>
-                    setIntegrationSettings({
-                      github: { ...integrationSettings.github, repoUrl: e.target.value },
-                    })
-                  }
-                />
-                <input
-                  type="text"
-                  className="kf-input text-xs py-1.5 w-full"
-                  placeholder="Default branch (e.g. main)"
-                  value={integrationSettings.github.defaultBranch}
-                  disabled={!integrationSettings.github.enabled}
-                  onChange={(e) =>
-                    setIntegrationSettings({
-                      github: { ...integrationSettings.github, defaultBranch: e.target.value },
-                    })
-                  }
-                />
+                <div className="flex items-center gap-1.5 mt-2">
+                  <span
+                    className={cn(
+                      'w-1.5 h-1.5 rounded-full',
+                      githubStatus.connected ? 'bg-kf-success' : 'bg-kf-warning',
+                    )}
+                  />
+                  <span className="text-[10px] uppercase tracking-wide text-kf-slate">
+                    {githubStatus.connected ? 'Connected' : 'Disconnected'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setGithubModalOpen(true)}
+                    className="ml-auto text-[10px] font-medium text-kf-meta-blue hover:underline"
+                  >
+                    {githubStatus.configured ? 'Manage' : 'Setup'}
+                  </button>
+                </div>
               </div>
-              <ConnectorItem icon={<Calendar size={14} />} label="Calendar" status="Active" />
+              <button type="button" className="w-full" onClick={() => setCalendarModalOpen(true)}>
+                <ConnectorItem icon={<Calendar size={14} />} label="Calendar" status="Export" />
+              </button>
               <ConnectorItem icon={<MessageSquare size={14} />} label="Team chat" status="Dock" />
             </div>
           </div>
@@ -186,6 +195,7 @@ export default function Layout({ children, currentView, onViewChange }: LayoutPr
         <div className="p-6 md:px-8 border-t border-kf-divider-gray flex items-center gap-3">
           <button
             type="button"
+            onClick={logout}
             className="kf-nav-link text-xs text-kf-secondary-text hover:text-kf-error inline-flex items-center gap-2"
           >
             <LogOut size={14} />
@@ -334,6 +344,13 @@ export default function Layout({ children, currentView, onViewChange }: LayoutPr
 
         <TeamChatDock />
         {adminUserModalOpen && <AdminCreateUserModal onClose={() => setAdminUserModalOpen(false)} />}
+        {calendarModalOpen && <CalendarIntegrationModal onClose={() => setCalendarModalOpen(false)} />}
+        <GithubIntegrationModal
+          open={githubModalOpen}
+          status={githubStatus}
+          onClose={() => setGithubModalOpen(false)}
+          onChanged={refreshGithubStatus}
+        />
       </main>
     </div>
   );

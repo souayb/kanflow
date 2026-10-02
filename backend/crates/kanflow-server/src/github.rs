@@ -167,7 +167,7 @@ impl GithubClient {
     /// The repository's default branch (`GET /repos/{owner}/{repo}`), used as the
     /// base a new task branch forks from. Not cached — a repo can change its
     /// default branch, and this only runs once per manual "create branch" click.
-    async fn default_branch(&self) -> anyhow::Result<String> {
+    pub async fn default_branch(&self) -> anyhow::Result<String> {
         let url = format!("{REST_BASE}/repos/{}/{}", self.cfg.owner, self.cfg.repo);
         let res = self.auth(self.http.get(&url)).send().await?;
         let res = ensure_ok(res, "get_repo").await?;

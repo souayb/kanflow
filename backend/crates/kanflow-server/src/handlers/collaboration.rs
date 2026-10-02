@@ -2,7 +2,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use axum::extract::{Path, State};
+use axum::extract::{Extension, Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::Json;
@@ -12,6 +12,7 @@ use serde_json::json;
 use sqlx::FromRow;
 use uuid::Uuid;
 
+use crate::auth::KanflowAuth;
 use crate::state::AppState;
 
 fn pg_unavailable() -> axum::response::Response {
@@ -198,6 +199,7 @@ pub async fn insert_activity(
 pub async fn list_sessions(
     State(state): State<AppState>,
     Path(project_id): Path<Uuid>,
+    Extension(auth): Extension<KanflowAuth>,
 ) -> impl IntoResponse {
     let Some(pool) = &state.pg else {
         return pg_unavailable();
@@ -222,9 +224,23 @@ pub async fn list_sessions(
         }
     };
 
+    let hidden_owners: HashSet<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM users
+         WHERE COALESCE((privacy_settings->>'showOnlineStatus')::boolean, true) = false
+           AND ($1::text IS NULL OR LOWER(email) <> LOWER($1))",
+    )
+    .bind(auth.email.as_deref())
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .collect();
+
     let visible: Vec<SessionRow> = rows
         .into_iter()
-        .filter(|s| is_stale_or_active(s.heartbeat_at, now))
+        .filter(|s| {
+            is_stale_or_active(s.heartbeat_at, now) && !hidden_owners.contains(&s.owner_user_id)
+        })
         .collect();
 
     let task_ids: Vec<Uuid> = visible.iter().filter_map(|s| s.task_id).collect();
@@ -545,6 +561,7 @@ pub async fn release_session(
 pub async fn list_activity(
     State(state): State<AppState>,
     Path(project_id): Path<Uuid>,
+    Extension(auth): Extension<KanflowAuth>,
 ) -> impl IntoResponse {
     let Some(pool) = &state.pg else {
         return pg_unavailable();
@@ -552,14 +569,22 @@ pub async fn list_activity(
 
     let since = Utc::now() - Duration::hours(48);
     let rows = sqlx::query_as::<_, ActivityRow>(
-        "SELECT id, project_id, actor_id, actor_kind, action, task_id, path, message, created_at
-         FROM activity_events
-         WHERE project_id = $1 AND created_at >= $2
-         ORDER BY created_at DESC
+        "SELECT a.id, a.project_id, a.actor_id, a.actor_kind, a.action, a.task_id, a.path,
+                a.message, a.created_at
+         FROM activity_events a
+         LEFT JOIN users u ON u.id = a.actor_id
+         WHERE a.project_id = $1 AND a.created_at >= $2
+           AND (
+             u.id IS NULL
+             OR COALESCE(u.privacy_settings->>'activityVisibility', 'project') <> 'private'
+             OR ($3::text IS NOT NULL AND LOWER(u.email) = LOWER($3))
+           )
+         ORDER BY a.created_at DESC
          LIMIT 100",
     )
     .bind(project_id)
     .bind(since)
+    .bind(auth.email.as_deref())
     .fetch_all(pool)
     .await;
 

@@ -100,6 +100,103 @@ pub struct UpdateProjectBody {
     pub description: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectMemberBody {
+    pub user_id: Uuid,
+}
+
+pub async fn add_project_member(
+    State(state): State<AppState>,
+    Path(project_id): Path<Uuid>,
+    Json(body): Json<ProjectMemberBody>,
+) -> impl IntoResponse {
+    let Some(pool) = &state.pg else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "postgres_disabled" })),
+        )
+            .into_response();
+    };
+    match sqlx::query(
+        r#"INSERT INTO project_members (project_id, user_id)
+           VALUES ($1, $2)
+           ON CONFLICT (project_id, user_id) DO NOTHING"#,
+    )
+    .bind(project_id)
+    .bind(body.user_id)
+    .execute(pool)
+    .await
+    {
+        Ok(_) => StatusCode::NO_CONTENT.into_response(),
+        Err(sqlx::Error::Database(error)) if error.is_foreign_key_violation() => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "project_or_user_not_found" })),
+        )
+            .into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": error.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+pub async fn remove_project_member(
+    State(state): State<AppState>,
+    Path((project_id, user_id)): Path<(Uuid, Uuid)>,
+) -> impl IntoResponse {
+    let Some(pool) = &state.pg else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "postgres_disabled" })),
+        )
+            .into_response();
+    };
+    let owner_id = sqlx::query_scalar::<_, Uuid>("SELECT owner_id FROM projects WHERE id = $1")
+        .bind(project_id)
+        .fetch_optional(pool)
+        .await;
+    match owner_id {
+        Ok(None) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": "project_not_found" })),
+            )
+                .into_response()
+        }
+        Ok(Some(owner_id)) if owner_id == user_id => {
+            return (
+                StatusCode::CONFLICT,
+                Json(json!({ "error": "project_owner_cannot_be_removed" })),
+            )
+                .into_response()
+        }
+        Err(error) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": error.to_string() })),
+            )
+                .into_response()
+        }
+        Ok(Some(_)) => {}
+    }
+
+    match sqlx::query("DELETE FROM project_members WHERE project_id = $1 AND user_id = $2")
+        .bind(project_id)
+        .bind(user_id)
+        .execute(pool)
+        .await
+    {
+        Ok(_) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": error.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
 pub async fn update_project(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,

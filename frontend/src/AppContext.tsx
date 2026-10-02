@@ -53,6 +53,7 @@ interface AppContextType {
   activeProjectId: string | null;
   apiOnline: boolean;
   githubStatus: GithubIntegrationStatus;
+  refreshGithubStatus: () => Promise<void>;
   setActiveProjectId: (id: string | null) => void;
   addTask: (task: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'comments' | 'position'> & { position?: number }) => void;
   updateTask: (id: string, updates: Partial<Task>) => void;
@@ -85,7 +86,7 @@ interface AppContextType {
   stopTimeLog: (taskId: string) => void;
   getTimeEntriesForTask: (taskId: string) => TimeEntry[];
   updateDashboardWidgets: (widgets: DashboardWidget[]) => void;
-  updateUser: (updates: Partial<User>) => void;
+  updateUser: (updates: Partial<Pick<User, 'name' | 'avatar' | 'privacy'>>) => Promise<void>;
   /** Inserts into Postgres (admin realm role) and refreshes the in-memory user directory. */
   createUserAdmin: (body: { name: string; email: string; role?: string }) => Promise<ApiUserRow>;
   activeTimer: { taskId: string; startTime: number } | null;
@@ -93,8 +94,8 @@ interface AppContextType {
   addProject: (name: string, description: string) => Promise<void>;
   updateProject: (id: string, updates: Partial<Pick<Project, 'name' | 'description'>>) => void;
   deleteProject: (id: string) => void;
-  addProjectTeamMember: (projectId: string, userId: string) => void;
-  removeProjectTeamMember: (projectId: string, userId: string) => void;
+  addProjectTeamMember: (projectId: string, userId: string) => Promise<void>;
+  removeProjectTeamMember: (projectId: string, userId: string) => Promise<void>;
   /** Header search — filters tasks across projects in the layout dropdown. */
   globalSearchQuery: string;
   setGlobalSearchQuery: (q: string) => void;
@@ -310,7 +311,7 @@ function loadCachedState() {
   const mergedIntegrations: IntegrationSettings = {
     ...DEFAULT_INTEGRATION_SETTINGS,
     ...integrations,
-    github: { ...DEFAULT_INTEGRATION_SETTINGS.github, ...integrations.github },
+    calendar: { ...DEFAULT_INTEGRATION_SETTINGS.calendar, ...integrations.calendar },
   };
 
   const rawDays = localStorage.getItem(KANFLOW_KEYS.dashboardChartDays);
@@ -368,29 +369,39 @@ export function AppProvider({ children, kcUser }: { children: React.ReactNode; k
   const [integrationSettings, setIntegrationSettingsState] = useState<IntegrationSettings>(initial.integrationSettings);
   const [dashboardChartDays, setDashboardChartDaysState] = useState<DashboardChartWindowDays>(initial.dashboardChartDays);
 
-  // Sync kcUser into currentUser whenever it changes (e.g. after token refresh)
+  // Keycloak owns identity; preserve app-owned profile/privacy fields on token refresh.
   useEffect(() => {
-    if (kcUser) setCurrentUser(kcUser);
+    if (kcUser) {
+      setCurrentUser((previous) => ({
+        ...previous,
+        ...kcUser,
+        avatar: previous?.avatar,
+        privacy: previous?.privacy,
+      }));
+    }
   }, [kcUser]);
 
-  // Real backend GitHub connectivity (instance-wide) — gates GitHub-only task UI.
-  useEffect(() => {
-    let cancelled = false;
-    api
-      .getGithubStatus()
-      .then((status) => { if (!cancelled) setGithubStatus(status); })
-      .catch(() => {/* stay disconnected */});
-    return () => { cancelled = true; };
+  const refreshGithubStatus = useCallback(async () => {
+    try {
+      setGithubStatus(await api.getGithubStatus());
+    } catch {
+      setGithubStatus({ connected: false });
+    }
   }, []);
+
+  useEffect(() => {
+    void refreshGithubStatus();
+  }, [refreshGithubStatus, apiOnline]);
 
   // ── Bootstrap from API ───────────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const [{ projects: apiProjects }, usersRes] = await Promise.all([
+        const [{ projects: apiProjects }, usersRes, meRes] = await Promise.all([
           api.getProjects(),
           api.getUsers().catch(() => ({ users: [] as ApiUserRow[] })),
+          api.getMe().catch(() => null),
         ]);
         if (cancelled) return;
 
@@ -401,8 +412,17 @@ export function AppProvider({ children, kcUser }: { children: React.ReactNode; k
               name: u.name,
               email: u.email,
               role: u.role,
+              avatar: u.avatar,
+              privacy: u.privacy,
             })),
           );
+        }
+        if (meRes?.user) {
+          setCurrentUser((previous) => ({
+            ...previous,
+            ...meRes.user,
+            privacy: meRes.user.privacy ?? previous?.privacy,
+          }));
         }
 
         const hydratedProjects: Project[] = await Promise.all(
@@ -540,8 +560,17 @@ export function AppProvider({ children, kcUser }: { children: React.ReactNode; k
             position,
           })
           .then(({ task }) => {
-            // Swap temp ID for server-assigned ID
-            setTasks((prev) => prev.map((t) => (t.id === tempId ? { ...t, id: task.id } : t)));
+            setTasks((prev) =>
+              prev.map((local) =>
+                local.id === tempId
+                  ? {
+                      ...apiTaskToTask(task),
+                      comments: local.comments,
+                      dependencies: local.dependencies,
+                    }
+                  : local,
+              ),
+            );
           })
           .catch(() => {/* keep optimistic state */});
       }
@@ -951,7 +980,9 @@ export function AppProvider({ children, kcUser }: { children: React.ReactNode; k
     [apiOnline, projects],
   );
 
-  const addProjectTeamMember = useCallback((projectId: string, userId: string) => {
+  const addProjectTeamMember = useCallback(async (projectId: string, userId: string) => {
+    if (!apiOnline) throw new Error('API is offline');
+    await api.addProjectMember(projectId, userId);
     setProjects((prev) =>
       prev.map((p) => {
         if (p.id !== projectId) return p;
@@ -960,9 +991,11 @@ export function AppProvider({ children, kcUser }: { children: React.ReactNode; k
         return { ...p, memberIds: Array.from(cur) };
       }),
     );
-  }, []);
+  }, [apiOnline]);
 
-  const removeProjectTeamMember = useCallback((projectId: string, userId: string) => {
+  const removeProjectTeamMember = useCallback(async (projectId: string, userId: string) => {
+    if (!apiOnline) throw new Error('API is offline');
+    await api.removeProjectMember(projectId, userId);
     setProjects((prev) =>
       prev.map((p) => {
         if (p.id !== projectId) return p;
@@ -972,7 +1005,7 @@ export function AppProvider({ children, kcUser }: { children: React.ReactNode; k
         return { ...p, memberIds: Array.from(cur) };
       }),
     );
-  }, []);
+  }, [apiOnline]);
 
   const clearPendingOpenTask = useCallback(() => {
     setPendingOpenTaskId(null);
@@ -996,7 +1029,7 @@ export function AppProvider({ children, kcUser }: { children: React.ReactNode; k
         return {
           ...prev,
           ...patch,
-          github: { ...prev.github, ...(patch.github ?? {}) },
+          calendar: { ...prev.calendar, ...(patch.calendar ?? {}) },
         };
       });
     },
@@ -1019,9 +1052,28 @@ export function AppProvider({ children, kcUser }: { children: React.ReactNode; k
     }
   }, [dashboardChartDays]);
 
-  const updateUser = useCallback((updates: Partial<User>) => {
-    setCurrentUser((prev) => (prev ? { ...prev, ...updates } : null));
-  }, []);
+  const updateUser = useCallback(
+    async (updates: Partial<Pick<User, 'name' | 'avatar' | 'privacy'>>) => {
+      const previous = currentUser;
+      setCurrentUser((current) => (current ? { ...current, ...updates } : null));
+      if (!apiOnline) return;
+      try {
+        const { user } = await api.updateMe(updates);
+        setCurrentUser((current) =>
+          current
+            ? { ...current, ...user, privacy: user.privacy ?? current.privacy }
+            : null,
+        );
+        setUsers((rows) =>
+          rows.map((row) => (row.id === user.id ? { ...row, ...user } : row)),
+        );
+      } catch (error) {
+        setCurrentUser(previous);
+        throw error;
+      }
+    },
+    [apiOnline, currentUser],
+  );
 
   const createUserAdmin = useCallback(async (body: { name: string; email: string; role?: string }) => {
     const { user } = await api.createUser(body);
@@ -1048,6 +1100,7 @@ export function AppProvider({ children, kcUser }: { children: React.ReactNode; k
         activeProjectId,
         apiOnline,
         githubStatus,
+        refreshGithubStatus,
         setActiveProjectId,
         addTask,
         updateTask,

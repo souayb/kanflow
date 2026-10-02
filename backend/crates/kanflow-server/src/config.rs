@@ -11,10 +11,15 @@ pub struct ServerConfig {
     pub mongo_db: String,
     /// Base URL of the Keycloak server, e.g. `http://keycloak:8180`
     pub keycloak_url: Option<String>,
+    /// Public issuer URL embedded in browser-issued tokens. This can differ
+    /// from `keycloak_url` when the backend reaches Keycloak over Docker DNS.
+    pub keycloak_issuer: Option<String>,
     /// Keycloak realm name, e.g. `kanflow`
     pub keycloak_realm: Option<String>,
     /// GitHub integration (one-way sync: app task → GitHub Issue + Projects v2 item).
     pub github: Option<GithubConfig>,
+    /// GitHub App user-authorization settings.
+    pub github_app: Option<GithubAppConfig>,
 }
 
 /// GitHub integration settings, present only when `GITHUB_TOKEN`, `GITHUB_OWNER`
@@ -34,6 +39,14 @@ pub struct GithubConfig {
     pub owner_is_org: bool,
 }
 
+#[derive(Debug, Clone)]
+pub struct GithubAppConfig {
+    pub client_id: String,
+    pub client_secret: String,
+    pub callback_url: String,
+    pub frontend_url: String,
+}
+
 impl ServerConfig {
     /// Load from environment. Missing `DATABASE_URL` / `MONGO_URI` yields `None` so the server can still boot for health checks.
     pub fn from_env() -> Self {
@@ -47,8 +60,12 @@ impl ServerConfig {
             mongo_uri: env::var("MONGO_URI").ok(),
             mongo_db: env::var("MONGO_DB").unwrap_or_else(|_| "kanflow".into()),
             keycloak_url: env::var("KEYCLOAK_URL").ok(),
+            keycloak_issuer: env::var("KEYCLOAK_ISSUER")
+                .ok()
+                .filter(|value| !value.trim().is_empty()),
             keycloak_realm: env::var("KEYCLOAK_REALM").ok(),
             github: GithubConfig::from_env(),
+            github_app: GithubAppConfig::from_env(),
         }
     }
 
@@ -63,9 +80,30 @@ impl ServerConfig {
 
     /// Expected token issuer (`iss` claim).
     pub fn token_issuer(&self) -> Option<String> {
+        if let Some(issuer) = &self.keycloak_issuer {
+            return Some(issuer.trim_end_matches('/').to_owned());
+        }
         let url = self.keycloak_url.as_deref()?;
         let realm = self.keycloak_realm.as_deref()?;
         Some(format!("{url}/realms/{realm}"))
+    }
+}
+
+impl GithubAppConfig {
+    pub fn from_env() -> Option<Self> {
+        Some(Self {
+            client_id: env::var("GITHUB_APP_CLIENT_ID")
+                .ok()
+                .filter(|value| !value.trim().is_empty())?,
+            client_secret: env::var("GITHUB_APP_CLIENT_SECRET")
+                .ok()
+                .filter(|value| !value.trim().is_empty())?,
+            callback_url: env::var("GITHUB_APP_CALLBACK_URL")
+                .ok()
+                .filter(|value| !value.trim().is_empty())?,
+            frontend_url: env::var("FRONTEND_PUBLIC_URL")
+                .unwrap_or_else(|_| "http://localhost:3000".into()),
+        })
     }
 }
 

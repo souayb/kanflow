@@ -276,8 +276,8 @@ pub async fn create_task(
 
     // ── Best-effort GitHub sync ────────────────────────────────────────────
     // Failures are logged, never fatal: the task already exists in Postgres.
-    if let Some(gh) = &state.github {
-        match sync_new_issue(gh, pool, &task).await {
+    if let Some(gh) = state.github_client() {
+        match sync_new_issue(&gh, pool, &task).await {
             Ok(Some(updated)) => task = updated,
             Ok(None) => {}
             Err(e) => tracing::warn!(task = %task.id, "GitHub issue sync failed: {e:#}"),
@@ -438,7 +438,7 @@ pub async fn update_task(
     };
 
     // ── Best-effort GitHub sync of the linked issue (title/body/open-closed) ─
-    if let (Some(gh), Some(number)) = (&state.github, task.github_issue_number) {
+    if let (Some(gh), Some(number)) = (state.github_client(), task.github_issue_number) {
         let closed = column_is_done(pool, task.column_id).await;
         let state_ = if closed {
             crate::github::IssueState::Closed
@@ -481,7 +481,7 @@ pub async fn create_task_branch(
     let Some(pool) = &state.pg else {
         return pg_unavailable();
     };
-    let Some(gh) = &state.github else {
+    let Some(gh) = state.github_client() else {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(json!({ "error": "github_not_connected" })),
@@ -639,7 +639,7 @@ pub async fn create_task_pr(
     let Some(pool) = &state.pg else {
         return pg_unavailable();
     };
-    let Some(gh) = &state.github else {
+    let Some(gh) = state.github_client() else {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(json!({ "error": "github_not_connected" })),
@@ -738,7 +738,7 @@ pub async fn link_task_pr(
     let Some(pool) = &state.pg else {
         return pg_unavailable();
     };
-    let Some(gh) = &state.github else {
+    let Some(gh) = state.github_client() else {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(json!({ "error": "github_not_connected" })),
@@ -806,7 +806,7 @@ pub async fn refresh_task_pr(
     let Some(pool) = &state.pg else {
         return pg_unavailable();
     };
-    let Some(gh) = &state.github else {
+    let Some(gh) = state.github_client() else {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(json!({ "error": "github_not_connected" })),
@@ -890,7 +890,7 @@ pub async fn delete_task(
 
     // Close the linked GitHub issue first (best-effort) — after the row is gone
     // we'd lose the issue number.
-    if let Some(gh) = &state.github {
+    if let Some(gh) = state.github_client() {
         if let Ok(Some(number)) = sqlx::query_scalar::<_, Option<i32>>(
             "SELECT github_issue_number FROM tasks WHERE id = $1",
         )

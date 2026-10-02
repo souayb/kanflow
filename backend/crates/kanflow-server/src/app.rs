@@ -18,6 +18,10 @@ pub fn router(state: AppState) -> Router {
             "/api/v1/users",
             get(handlers::list_users).post(handlers::create_user),
         )
+        .route(
+            "/api/v1/users/me",
+            get(handlers::get_me).patch(handlers::update_me),
+        )
         // ── Projects ──────────────────────────────────────────────────────
         .route(
             "/api/v1/projects",
@@ -26,6 +30,14 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/api/v1/projects/{project_id}",
             patch(handlers::update_project).delete(handlers::delete_project),
+        )
+        .route(
+            "/api/v1/projects/{project_id}/members",
+            post(handlers::add_project_member),
+        )
+        .route(
+            "/api/v1/projects/{project_id}/members/{user_id}",
+            axum::routing::delete(handlers::remove_project_member),
         )
         // ── Columns ───────────────────────────────────────────────────────
         .route(
@@ -79,7 +91,16 @@ pub fn router(state: AppState) -> Router {
             get(handlers::list_activity),
         )
         // ── Integrations ──────────────────────────────────────────────────
-        .route("/api/v1/integrations/github", get(handlers::github_status))
+        .route(
+            "/api/v1/integrations/github",
+            get(handlers::github_status)
+                .post(handlers::configure_github)
+                .delete(handlers::disconnect_github),
+        )
+        .route(
+            "/api/v1/integrations/github/authorize",
+            post(handlers::start_github_auth),
+        )
         // ── Chat (MongoDB) ────────────────────────────────────────────────
         .route(
             "/api/v1/projects/{project_id}/chat",
@@ -95,6 +116,10 @@ pub fn router(state: AppState) -> Router {
 
     Router::new()
         .route("/health", get(handlers::health))
+        .route(
+            "/api/v1/integrations/github/callback",
+            get(handlers::github_auth_callback),
+        )
         .merge(api)
         .layer(
             CorsLayer::new()

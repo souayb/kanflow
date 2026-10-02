@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { X, UserPlus } from 'lucide-react';
 import { useApp } from '../AppContext';
 
@@ -11,6 +11,8 @@ interface InviteTeamModalProps {
 export default function InviteTeamModal({ open, onClose, projectId }: InviteTeamModalProps) {
   const { projects, users, addProjectTeamMember } = useApp();
   const project = projects.find((p) => p.id === projectId);
+  const [adding, setAdding] = useState(false);
+  const [error, setError] = useState('');
 
   const teamIds = useMemo(
     () => (project ? Array.from(new Set([project.ownerId, ...(project.memberIds ?? [])].filter(Boolean))) : []),
@@ -52,10 +54,19 @@ export default function InviteTeamModal({ open, onClose, projectId }: InviteTeam
               key={teamIds.join(',')}
               className="kf-input w-full text-sm rounded-[12px]"
               defaultValue=""
-              onChange={(e) => {
+              disabled={adding}
+              onChange={async (e) => {
                 const v = e.target.value;
                 if (v) {
-                  addProjectTeamMember(projectId, v);
+                  setAdding(true);
+                  setError('');
+                  try {
+                    await addProjectTeamMember(projectId, v);
+                  } catch {
+                    setError('Could not add this teammate. Please try again.');
+                  } finally {
+                    setAdding(false);
+                  }
                   e.target.value = '';
                 }
               }}
@@ -69,6 +80,7 @@ export default function InviteTeamModal({ open, onClose, projectId }: InviteTeam
                 </option>
               ))}
             </select>
+            {error && <p className="text-xs text-kf-error">{error}</p>}
           </div>
         )}
         <div className="flex justify-end pt-2">

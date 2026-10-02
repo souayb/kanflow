@@ -3,7 +3,9 @@
  * Falls back gracefully — callers should catch errors and use localStorage cache.
  */
 
-const BASE: string = (import.meta as any).env?.VITE_API_URL ?? 'http://localhost:8080';
+const BASE: string =
+  (import.meta as any).env?.VITE_API_URL ??
+  ((import.meta as any).env?.DEV ? 'http://localhost:8080' : '');
 
 // ── Auth token getter (set by AuthProvider once Keycloak initialises) ─────────
 
@@ -54,6 +56,12 @@ export interface ApiUserRow {
   name: string;
   email: string;
   role: string;
+  avatar?: string;
+  privacy?: {
+    activityVisibility: 'project' | 'private';
+    showOnlineStatus: boolean;
+    allowAnalytics: boolean;
+  };
 }
 
 export interface ApiTask {
@@ -122,8 +130,13 @@ export interface ApiActivityEvent {
 
 export interface GithubIntegrationStatus {
   connected: boolean;
+  configured?: boolean;
+  appAvailable?: boolean;
+  authMethod?: 'pat' | 'github_app';
   owner?: string;
   repo?: string;
+  defaultBranch?: string;
+  error?: 'connection_failed';
 }
 
 /**
@@ -171,6 +184,18 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
+  getMe: () => apiFetch<{ user: ApiUserRow }>('/api/v1/users/me'),
+
+  updateMe: (body: {
+    name?: string;
+    avatar?: string;
+    privacy?: ApiUserRow['privacy'];
+  }) =>
+    apiFetch<{ user: ApiUserRow }>('/api/v1/users/me', {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+
   // Projects
   getProjects: () =>
     apiFetch<{ projects: ApiProject[] }>('/api/v1/projects'),
@@ -187,6 +212,17 @@ export const api = {
 
   deleteProject: (id: string) =>
     apiFetch<void>(`/api/v1/projects/${id}`, { method: 'DELETE' }),
+
+  addProjectMember: (projectId: string, userId: string) =>
+    apiFetch<void>(`/api/v1/projects/${projectId}/members`, {
+      method: 'POST',
+      body: JSON.stringify({ userId }),
+    }),
+
+  removeProjectMember: (projectId: string, userId: string) =>
+    apiFetch<void>(`/api/v1/projects/${projectId}/members/${userId}`, {
+      method: 'DELETE',
+    }),
 
   // Columns
   getColumns: (projectId: string) =>
@@ -293,6 +329,29 @@ export const api = {
 
   // Integrations
   getGithubStatus: () => apiFetch<GithubIntegrationStatus>('/api/v1/integrations/github'),
+  configureGithub: (body: {
+    token: string;
+    owner: string;
+    repo: string;
+    projectNumber?: number;
+    ownerIsOrg?: boolean;
+  }) =>
+    apiFetch<GithubIntegrationStatus>('/api/v1/integrations/github', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  startGithubAuth: (body: {
+    owner: string;
+    repo: string;
+    projectNumber?: number;
+    ownerIsOrg?: boolean;
+  }) =>
+    apiFetch<{ authorizeUrl: string }>('/api/v1/integrations/github/authorize', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  disconnectGithub: () =>
+    apiFetch<void>('/api/v1/integrations/github', { method: 'DELETE' }),
 
   // Comments
   addComment: (taskId: string, body: { user_id: string; user_name: string; content: string }) =>
