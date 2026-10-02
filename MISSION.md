@@ -384,6 +384,15 @@ OverlapFinding { kind: 'file_overlap' | 'issue_collision' | 'shared_branch', ses
 
 ---
 
+### 5.15 Coding-agent terminal
+
+* Warp-inspired in-app terminal: block-based command history, streamed output, and a future hook for CLI agents.
+* Kanflow does **not** vendor Warp source. Warp is AGPL; the public fork lives at `https://github.com/souayb/warp` for study. The Kanflow terminal is an original WebSocket + shell implementation.
+* API: authenticated `GET /api/v1/terminal/ws` upgrades to a WebSocket. Frames: `ready`, `input`, `started`, `output`, `exit`.
+* UI: `CodingAgentView` under **Coding agent**. Working directory comes from `KANFLOW_TERMINAL_CWD`.
+
+---
+
 ## 6. State Management
 
 ### Client State Shape (AppContext)

@@ -120,6 +120,7 @@ pub fn router(state: AppState) -> Router {
             "/api/v1/integrations/github/callback",
             get(handlers::github_auth_callback),
         )
+        .route("/api/v1/terminal/ws", get(handlers::terminal_ws))
         .merge(api)
         .layer(
             CorsLayer::new()

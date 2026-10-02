@@ -16,6 +16,7 @@ import {
   Users,
   GitPullRequest,
   RefreshCw,
+  TerminalSquare,
 } from 'lucide-react';
 import { useApp } from '../AppContext';
 import { cn } from '../lib/utils';
@@ -127,6 +128,12 @@ export default function Layout({ children, currentView, onViewChange }: LayoutPr
               label="Time"
               active={currentView === 'time'}
               onClick={() => onViewChange('time')}
+            />
+            <SidebarItem
+              icon={<TerminalSquare size={20} strokeWidth={1.75} />}
+              label="Coding agent"
+              active={currentView === 'agent'}
+              onClick={() => onViewChange('agent')}
             />
           </nav>
         </div>

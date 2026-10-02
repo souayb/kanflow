@@ -4,6 +4,7 @@ mod health;
 mod integrations;
 mod projects;
 mod tasks;
+mod terminal;
 mod users;
 
 pub use collaboration::{
@@ -22,4 +23,5 @@ pub use tasks::{
     create_comment, create_task, create_task_branch, create_task_pr, delete_task, link_task_pr,
     list_tasks, refresh_task_pr, update_task,
 };
+pub use terminal::terminal_ws;
 pub use users::{create_user, get_me, list_users, update_me};

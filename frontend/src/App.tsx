@@ -15,6 +15,7 @@ import PersonalTodoView from './components/PersonalTodoView';
 import TimeKeepingView from './components/TimeKeepingView';
 import CollaborationView from './components/CollaborationView';
 import ReviewsView from './components/ReviewsView';
+import CodingAgentView from './components/CodingAgentView';
 
 export type AppView =
   | 'dashboard'
@@ -23,7 +24,8 @@ export type AppView =
   | 'reviews'
   | 'reporting'
   | 'todos'
-  | 'time';
+  | 'time'
+  | 'agent';
 
 function AppContent() {
   const [currentView, setCurrentView] = React.useState<AppView>('kanban');
@@ -46,6 +48,7 @@ function AppContent() {
       {currentView === 'reporting' && <ReportingView />}
       {currentView === 'todos' && <PersonalTodoView />}
       {currentView === 'time' && <TimeKeepingView />}
+      {currentView === 'agent' && <CodingAgentView />}
     </Layout>
   );
 }

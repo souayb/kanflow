@@ -76,6 +76,12 @@ async fn update_me_no_pg_returns_503() {
 }
 
 #[tokio::test]
+async fn terminal_ws_without_upgrade_is_not_ok() {
+    let (status, _) = get("/api/v1/terminal/ws").await;
+    assert_ne!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
 async fn github_status_reports_unconfigured() {
     let (status, body) = get("/api/v1/integrations/github").await;
     assert_eq!(status, StatusCode::OK);

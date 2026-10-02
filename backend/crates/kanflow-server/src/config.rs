@@ -20,6 +20,8 @@ pub struct ServerConfig {
     pub github: Option<GithubConfig>,
     /// GitHub App user-authorization settings.
     pub github_app: Option<GithubAppConfig>,
+    /// Working directory for the in-app coding-agent terminal.
+    pub terminal_cwd: String,
 }
 
 /// GitHub integration settings, present only when `GITHUB_TOKEN`, `GITHUB_OWNER`
@@ -66,6 +68,14 @@ impl ServerConfig {
             keycloak_realm: env::var("KEYCLOAK_REALM").ok(),
             github: GithubConfig::from_env(),
             github_app: GithubAppConfig::from_env(),
+            terminal_cwd: env::var("KANFLOW_TERMINAL_CWD")
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or_else(|| {
+                    env::current_dir()
+                        .map(|p| p.display().to_string())
+                        .unwrap_or_else(|_| ".".into())
+                }),
         }
     }
 
