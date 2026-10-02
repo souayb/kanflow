@@ -63,6 +63,45 @@ async fn create_user_no_pg_returns_503() {
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
 }
 
+#[tokio::test]
+async fn get_me_no_pg_returns_503() {
+    let (status, _) = get("/api/v1/users/me").await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+}
+
+#[tokio::test]
+async fn update_me_no_pg_returns_503() {
+    let (status, _) = patch("/api/v1/users/me", r#"{"name":"Pat"}"#).await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+}
+
+#[tokio::test]
+async fn terminal_ws_without_upgrade_is_not_ok() {
+    let (status, _) = get("/api/v1/terminal/ws").await;
+    assert_ne!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn github_status_reports_unconfigured() {
+    let (status, body) = get("/api/v1/integrations/github").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["connected"], false);
+    assert_eq!(body["configured"], false);
+}
+
+#[tokio::test]
+async fn configure_github_no_pg_returns_503() {
+    let body = r#"{"token":"token","owner":"owner","repo":"repo"}"#;
+    let (status, _) = post("/api/v1/integrations/github", body).await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+}
+
+#[tokio::test]
+async fn disconnect_github_no_pg_returns_503() {
+    let (status, _) = delete("/api/v1/integrations/github").await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+}
+
 // ── projects ─────────────────────────────────────────────────────────────────
 
 #[tokio::test]
@@ -92,6 +131,23 @@ async fn delete_project_no_pg_returns_503() {
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
 }
 
+#[tokio::test]
+async fn add_project_member_no_pg_returns_503() {
+    let project_id = uuid::Uuid::new_v4();
+    let user_id = uuid::Uuid::new_v4();
+    let body = format!(r#"{{"userId":"{user_id}"}}"#);
+    let (status, _) = post(&format!("/api/v1/projects/{project_id}/members"), &body).await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+}
+
+#[tokio::test]
+async fn remove_project_member_no_pg_returns_503() {
+    let project_id = uuid::Uuid::new_v4();
+    let user_id = uuid::Uuid::new_v4();
+    let (status, _) = delete(&format!("/api/v1/projects/{project_id}/members/{user_id}")).await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+}
+
 // ── columns ───────────────────────────────────────────────────────────────────
 
 #[tokio::test]
@@ -104,7 +160,11 @@ async fn list_columns_no_pg_returns_503() {
 #[tokio::test]
 async fn create_column_no_pg_returns_503() {
     let id = uuid::Uuid::new_v4();
-    let (status, _) = post(&format!("/api/v1/projects/{id}/columns"), r#"{"title":"Todo"}"#).await;
+    let (status, _) = post(
+        &format!("/api/v1/projects/{id}/columns"),
+        r#"{"title":"Todo"}"#,
+    )
+    .await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
 }
 

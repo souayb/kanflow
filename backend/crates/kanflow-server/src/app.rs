@@ -14,40 +14,120 @@ pub fn router(state: AppState) -> Router {
     // When `state.auth` is None (no KC), middleware still attaches `KanflowAuth::dev_open()` for handlers.
     let api = Router::new()
         // ── Users (directory + admin create) ─────────────────────────────
-        .route("/api/v1/users", get(handlers::list_users).post(handlers::create_user))
-
+        .route(
+            "/api/v1/users",
+            get(handlers::list_users).post(handlers::create_user),
+        )
+        .route(
+            "/api/v1/users/me",
+            get(handlers::get_me).patch(handlers::update_me),
+        )
         // ── Projects ──────────────────────────────────────────────────────
-        .route("/api/v1/projects",     get(handlers::list_projects).post(handlers::create_project))
-        .route("/api/v1/projects/{project_id}",
-            patch(handlers::update_project).delete(handlers::delete_project))
-
+        .route(
+            "/api/v1/projects",
+            get(handlers::list_projects).post(handlers::create_project),
+        )
+        .route(
+            "/api/v1/projects/{project_id}",
+            patch(handlers::update_project).delete(handlers::delete_project),
+        )
+        .route(
+            "/api/v1/projects/{project_id}/members",
+            post(handlers::add_project_member),
+        )
+        .route(
+            "/api/v1/projects/{project_id}/members/{user_id}",
+            axum::routing::delete(handlers::remove_project_member),
+        )
         // ── Columns ───────────────────────────────────────────────────────
-        .route("/api/v1/projects/{project_id}/columns",
-            get(handlers::list_columns).post(handlers::create_column))
-        .route("/api/v1/projects/{project_id}/columns/{column_id}",
-            patch(handlers::update_column).delete(handlers::delete_column))
-
+        .route(
+            "/api/v1/projects/{project_id}/columns",
+            get(handlers::list_columns).post(handlers::create_column),
+        )
+        .route(
+            "/api/v1/projects/{project_id}/columns/{column_id}",
+            patch(handlers::update_column).delete(handlers::delete_column),
+        )
         // ── Tasks ─────────────────────────────────────────────────────────
-        .route("/api/v1/projects/{project_id}/tasks",
-            get(handlers::list_tasks).post(handlers::create_task))
-        .route("/api/v1/tasks/{task_id}",
-            patch(handlers::update_task).delete(handlers::delete_task))
-        .route("/api/v1/tasks/{task_id}/comments", post(handlers::create_comment))
-
+        .route(
+            "/api/v1/projects/{project_id}/tasks",
+            get(handlers::list_tasks).post(handlers::create_task),
+        )
+        .route(
+            "/api/v1/tasks/{task_id}",
+            patch(handlers::update_task).delete(handlers::delete_task),
+        )
+        .route(
+            "/api/v1/tasks/{task_id}/comments",
+            post(handlers::create_comment),
+        )
+        .route(
+            "/api/v1/tasks/{task_id}/github-branch",
+            post(handlers::create_task_branch),
+        )
+        .route(
+            "/api/v1/tasks/{task_id}/github-pr",
+            post(handlers::create_task_pr),
+        )
+        .route(
+            "/api/v1/tasks/{task_id}/github-pr/link",
+            post(handlers::link_task_pr),
+        )
+        .route(
+            "/api/v1/tasks/{task_id}/github-pr/refresh",
+            post(handlers::refresh_task_pr),
+        )
+        // ── Collaboration (sessions + activity) ───────────────────────────
+        .route(
+            "/api/v1/projects/{project_id}/sessions",
+            get(handlers::list_sessions).post(handlers::claim_session),
+        )
+        .route(
+            "/api/v1/sessions/{session_id}",
+            patch(handlers::update_session).delete(handlers::release_session),
+        )
+        .route(
+            "/api/v1/projects/{project_id}/activity",
+            get(handlers::list_activity),
+        )
+        // ── Integrations ──────────────────────────────────────────────────
+        .route(
+            "/api/v1/integrations/github",
+            get(handlers::github_status)
+                .post(handlers::configure_github)
+                .delete(handlers::disconnect_github),
+        )
+        .route(
+            "/api/v1/integrations/github/authorize",
+            post(handlers::start_github_auth),
+        )
         // ── Chat (MongoDB) ────────────────────────────────────────────────
-        .route("/api/v1/projects/{project_id}/chat",
-            get(mongo_store::list_chat).post(mongo_store::append_chat))
-
+        .route(
+            "/api/v1/projects/{project_id}/chat",
+            get(mongo_store::list_chat).post(mongo_store::append_chat),
+        )
         // ── Config / Blobs (MongoDB) ──────────────────────────────────────
-        .route("/api/v1/config", get(mongo_store::get_config).put(mongo_store::put_config))
-        .route("/api/v1/blobs",  post(mongo_store::post_blob))
-
+        .route(
+            "/api/v1/config",
+            get(mongo_store::get_config).put(mongo_store::put_config),
+        )
+        .route("/api/v1/blobs", post(mongo_store::post_blob))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_auth));
 
     Router::new()
         .route("/health", get(handlers::health))
+        .route(
+            "/api/v1/integrations/github/callback",
+            get(handlers::github_auth_callback),
+        )
+        .route("/api/v1/terminal/ws", get(handlers::terminal_ws))
         .merge(api)
-        .layer(CorsLayer::new().allow_origin(Any).allow_methods(Any).allow_headers(Any))
+        .layer(
+            CorsLayer::new()
+                .allow_origin(Any)
+                .allow_methods(Any)
+                .allow_headers(Any),
+        )
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }

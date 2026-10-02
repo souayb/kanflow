@@ -105,7 +105,9 @@ pub async fn fetch_and_cache_jwks(auth: &Arc<AuthConfig>) -> anyhow::Result<()> 
         }
         if let (Some(kid), Some(n), Some(e)) = (jwk.kid, jwk.n, jwk.e) {
             match DecodingKey::from_rsa_components(&n, &e) {
-                Ok(dk) => { map.insert(kid, dk); }
+                Ok(dk) => {
+                    map.insert(kid, dk);
+                }
                 Err(e) => tracing::warn!("skip JWK: {e}"),
             }
         }
@@ -116,6 +118,11 @@ pub async fn fetch_and_cache_jwks(auth: &Arc<AuthConfig>) -> anyhow::Result<()> 
 }
 
 // ── Token validation ──────────────────────────────────────────────────────────
+
+#[allow(clippy::result_unit_err)]
+pub async fn validate_bearer(token: &str, auth: &Arc<AuthConfig>) -> Result<Claims, ()> {
+    validate_token(token, auth).await
+}
 
 async fn validate_token(token: &str, auth: &Arc<AuthConfig>) -> Result<Claims, ()> {
     let header = decode_header(token).map_err(|_| ())?;
@@ -145,7 +152,9 @@ fn try_decode(token: &str, dk: &DecodingKey, issuer: &str) -> Result<Claims, ()>
     v.validate_aud = false; // Keycloak audience varies by client setup
     decode::<Claims>(token, dk, &v)
         .map(|d| d.claims)
-        .map_err(|e| { tracing::debug!("JWT validation failed: {e}"); })
+        .map_err(|e| {
+            tracing::debug!("JWT validation failed: {e}");
+        })
 }
 
 // ── Axum middleware ───────────────────────────────────────────────────────────

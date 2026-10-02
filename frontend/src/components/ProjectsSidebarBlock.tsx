@@ -22,6 +22,8 @@ export default function ProjectsSidebarBlock({ onSelectProject }: ProjectsSideba
   const [showNewProject, setShowNewProject] = useState(false);
   const [newName, setNewName] = useState('');
   const [newDescription, setNewDescription] = useState('');
+  const [teamError, setTeamError] = useState('');
+  const [changingMember, setChangingMember] = useState(false);
 
   const active = projects.find((p) => p.id === activeProjectId);
   const teamIds = active
@@ -119,7 +121,18 @@ export default function ProjectsSidebarBlock({ onSelectProject }: ProjectsSideba
                       type="button"
                       className="ml-0.5 p-0.5 rounded-full hover:bg-kf-divider-gray/80 text-kf-slate"
                       aria-label={`Remove ${u.name}`}
-                      onClick={() => removeProjectTeamMember(active.id, uid)}
+                      disabled={changingMember}
+                      onClick={async () => {
+                        setChangingMember(true);
+                        setTeamError('');
+                        try {
+                          await removeProjectTeamMember(active.id, uid);
+                        } catch {
+                          setTeamError('Could not remove this teammate.');
+                        } finally {
+                          setChangingMember(false);
+                        }
+                      }}
                     >
                       <X size={12} />
                     </button>
@@ -135,10 +148,19 @@ export default function ProjectsSidebarBlock({ onSelectProject }: ProjectsSideba
                 className="kf-input text-xs py-2 rounded-[12px] flex-1 min-w-0"
                 aria-label="Add teammate"
                 value=""
-                onChange={(e) => {
+                disabled={changingMember}
+                onChange={async (e) => {
                   const v = e.target.value;
                   if (v) {
-                    addProjectTeamMember(active.id, v);
+                    setChangingMember(true);
+                    setTeamError('');
+                    try {
+                      await addProjectTeamMember(active.id, v);
+                    } catch {
+                      setTeamError('Could not add this teammate.');
+                    } finally {
+                      setChangingMember(false);
+                    }
                     e.target.value = '';
                   }
                 }}
@@ -154,6 +176,7 @@ export default function ProjectsSidebarBlock({ onSelectProject }: ProjectsSideba
           ) : (
             <p className="text-[11px] text-kf-slate">Everyone is already on this project.</p>
           )}
+          {teamError && <p className="mt-2 text-[11px] text-kf-error">{teamError}</p>}
         </div>
       )}
 

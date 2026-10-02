@@ -9,7 +9,7 @@ services:
       POSTGRES_PASSWORD: kanflow
       POSTGRES_DB: kanflow
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - kanflow_pg:/var/lib/postgresql/data
     healthcheck:
@@ -22,7 +22,7 @@ services:
   mongo:
     image: mongo:7
     ports:
-      - "27017:27017"
+      - "${MONGO_PORT:-27017}:27017"
     volumes:
       - kanflow_mongo:/data/db
     healthcheck:
@@ -60,7 +60,7 @@ services:
       KC_PROXY_HEADERS: "xforwarded"
       KC_LOG_LEVEL: warn
     ports:
-      - "8180:8180"
+      - "${KEYCLOAK_PORT:-8180}:8180"
     volumes:
       - ./keycloak/kanflow-realm.json:/opt/keycloak/data/import/kanflow-realm.json:ro
       # No named volume: ephemeral H2 means the realm JSON is always reimported,
@@ -93,7 +93,7 @@ services:
   ollama:
     image: ollama/ollama
     ports:
-      - "11434:11434"
+      - "${OLLAMA_PORT:-11434}:11434"
     volumes:
       - kanflow_ollama:/root/.ollama
     environment:
@@ -132,7 +132,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     ports:
-      - "8080:8080"
+      - "${BACKEND_PORT:-8080}:8080"
     environment:
       DATABASE_URL: postgres://kanflow:kanflow@postgres:5432/kanflow
       MONGO_URI: mongodb://mongo:27017
@@ -142,6 +142,9 @@ services:
       # Keycloak — use the internal Docker hostname
       KEYCLOAK_URL: http://keycloak:8180
       KEYCLOAK_REALM: kanflow
+      # Tokens issued to browsers contain the public URL, while JWKS is fetched
+      # through the internal Docker hostname above.
+      KEYCLOAK_ISSUER: "${KEYCLOAK_PUBLIC_URL:-http://localhost:${KEYCLOAK_PORT:-8180}}/realms/kanflow"
       # GitHub one-way sync (optional). Set these in a local .env file — see .env.example.
       # When token+owner+repo are all present, creating a task opens a GitHub Issue
       # and (if GITHUB_PROJECT_NUMBER is set) adds it to that Projects v2 board.
@@ -150,6 +153,15 @@ services:
       GITHUB_REPO: "${GITHUB_REPO:-}"
       GITHUB_PROJECT_NUMBER: "${GITHUB_PROJECT_NUMBER:-}"
       GITHUB_OWNER_IS_ORG: "${GITHUB_OWNER_IS_ORG:-false}"
+      # Preferred GitHub App authorization. Create a GitHub App with this
+      # callback URL; PAT configuration remains available as a fallback.
+      GITHUB_APP_CLIENT_ID: "${GITHUB_APP_CLIENT_ID:-}"
+      GITHUB_APP_CLIENT_SECRET: "${GITHUB_APP_CLIENT_SECRET:-}"
+      GITHUB_APP_CALLBACK_URL: "${GITHUB_APP_CALLBACK_URL:-http://localhost:${FRONTEND_PORT:-3000}/api/v1/integrations/github/callback}"
+      FRONTEND_PUBLIC_URL: "${FRONTEND_PUBLIC_URL:-http://localhost:${FRONTEND_PORT:-3000}}"
+      KANFLOW_TERMINAL_CWD: "${KANFLOW_TERMINAL_CWD:-/workspace}"
+    volumes:
+      - .:/workspace:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -172,11 +184,13 @@ services:
       args:
         VITE_OLLAMA_URL: "/ollama"
         VITE_OLLAMA_MODEL: "${OLLAMA_MODEL:-llama3.2}"
-        VITE_KEYCLOAK_URL: "${KEYCLOAK_PUBLIC_URL:-http://localhost:8180}"
+        VITE_KEYCLOAK_URL: "${KEYCLOAK_PUBLIC_URL:-http://localhost:${KEYCLOAK_PORT:-8180}}"
         VITE_KEYCLOAK_REALM: "kanflow"
         VITE_KEYCLOAK_CLIENT_ID: "kanflow-frontend"
+        # API is same-origin through nginx; no host port is baked into the bundle.
+        VITE_API_URL: ""
     ports:
-      - "3000:80"
+      - "${FRONTEND_PORT:-3000}:80"
     depends_on:
       backend:
         condition: service_started

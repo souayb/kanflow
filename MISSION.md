@@ -48,8 +48,11 @@ User {
   email: string
   avatar?: string
   role: string
-  twoFactorEnabled?: boolean
-  passwordLastChanged?: number
+  privacy?: {
+    activityVisibility: 'project' | 'private'
+    showOnlineStatus: boolean
+    allowAnalytics: boolean
+  }
 }
 ```
 
@@ -97,6 +100,13 @@ Task {
   updatedAt: number
   aiSuggested?: boolean
   aiThinking?: string
+  githubIssueNumber?: number
+  githubIssueUrl?: string
+  githubBranchName?: string
+  githubBranchUrl?: string
+  githubPrNumber?: number
+  githubPrUrl?: string
+  githubPrState?: 'draft' | 'open' | 'approved' | 'changes' | 'merged' | 'closed'
 }
 ```
 
@@ -111,6 +121,10 @@ Comment {
   createdAt: number
 }
 ```
+
+#### WorkSession / ActivityEvent
+
+See §5.12 for full schemas (`ActorKind`, phases, overlap findings).
 
 #### Notification
 
@@ -313,6 +327,72 @@ ChatMessage {
 
 ---
 
+### 5.12 Collaboration overview (agent-aware)
+
+Inspired by [AgentBoardMCP](https://github.com/Svrn-alpha/AgentBoardMCP) product surfaces (not its git-ref storage).
+
+#### Domain
+
+```ts
+ActorKind = 'human' | 'agent'
+WorkSessionPhase = 'exploring' | 'implementing' | 'testing' | 'pr_open' | 'review' | 'blocked'
+WorkSessionTool = 'cursor' | 'claude' | 'codex' | 'ollama' | 'human'
+
+WorkSession {
+  id, projectId, taskId?, ownerUserId, actorKind, tool?
+  intent, phase, touchedFiles[], plannedFiles[], branchName?
+  heartbeatAt, createdAt, updatedAt
+}
+
+ActivityEvent {
+  id, projectId, actorId, actorKind, action, taskId?, path?, message, createdAt
+}
+
+OverlapFinding { kind: 'file_overlap' | 'issue_collision' | 'shared_branch', sessionId, otherSessionId, detail, paths?, issueNumber? }
+```
+
+* **Active** session: `heartbeatAt` within 2 hours. **Stale**: 2–24h (informational). Older sessions are ignored in overlap warnings.
+* **View:** `collaboration` — `CollaborationView`: Needs you (overlaps for current user), Who is working (sessions grouped by owner), Repo map (folders from `touchedFiles` colored by owner), Live (last 2h activity).
+* **API:** `GET/POST /api/v1/projects/:id/sessions`, `PATCH/DELETE /api/v1/sessions/:id`, `GET /api/v1/projects/:id/activity`
+* Task create/update/comment and session claim/release append `ActivityEvent`s. Dashboard “Recent activity” reads the same feed.
+* Overlaps (v1): shared touched/planned paths; same linked GitHub issue on two sessions’ tasks; same `branchName`.
+* Offline: `kanflow_work_sessions` / `kanflow_activity_events` localStorage; seed includes a demo agent session.
+
+---
+
+### 5.13 GitHub PR reviews
+
+* GitHub connection state is authoritative from `GET /api/v1/integrations/github`, which verifies the configured token/repository against GitHub and reports the default branch.
+* Preferred connection: GitHub App user authorization (`/authorize` → GitHub → `/callback`), with PAT setup retained as a fallback. Disconnecting a GitHub App connection revokes its token at GitHub.
+* Docker serves the API through same-origin `/api` so browser clients do not depend on a baked host port.
+* Task fields: `githubPrNumber`, `githubPrUrl`, `githubPrState` (`draft` | `open` | `approved` | `changes` | `merged` | `closed`)
+* Requires an existing `githubBranchName`. Endpoints:
+  * `POST /api/v1/tasks/:id/github-pr` — create PR (head = branch, base = repo default)
+  * `POST /api/v1/tasks/:id/github-pr/link` — `{ number }` attach existing PR
+  * `POST /api/v1/tasks/:id/github-pr/refresh` — re-fetch state from GitHub
+* **UI:** TaskModal Create/Link PR + status badge; **Reviews** view lists tasks in a column titled Review **or** with `githubPrState` in `open|approved|changes`.
+* When a PR is created successfully and a column titled `Review` exists, move the task into that column. When refreshed state is `merged` and a `Done` column exists, move the task there.
+
+---
+
+### 5.14 Calendar, profile, and privacy
+
+* **Calendar:** export task due dates as a standards-compliant iCalendar (`.ics`) file for Apple Calendar, Google Calendar, and Outlook. Filters for assigned-only and completed tasks persist locally.
+* **Profile:** `GET/PATCH /api/v1/users/me` persists app-owned display name, avatar URL, and privacy settings by authenticated Keycloak email.
+* **Security:** passwords and MFA are managed only in Keycloak; Kanflow never stores password or 2FA state.
+* **Privacy:** users can hide online/session presence, make activity private, and opt in/out of anonymous analytics. Collaboration endpoints enforce online and activity visibility server-side.
+
+---
+
+### 5.15 Coding-agent terminal
+
+* Warp-inspired in-app terminal: block-based command history, streamed output, and a future hook for CLI agents.
+* Kanflow does **not** vendor Warp source. Warp is AGPL; the public fork lives at `https://github.com/souayb/warp` for study. The Kanflow terminal is an original WebSocket + shell implementation.
+* API: authenticated `GET /api/v1/terminal/ws` upgrades to a WebSocket. Frames: `ready`, `input`, `started`, `output`, `exit`.
+* UI: `CodingAgentView` under **Coding agent**. Working directory comes from `KANFLOW_TERMINAL_CWD`.
+
+---
+
 ## 6. State Management
 
 ### Client State Shape (AppContext)
@@ -347,6 +427,8 @@ AppContextType {
 |------|-----------|-----------|
 | Kanban Board | `kanban` | `KanbanView` |
 | Dashboard | `dashboard` | `DashboardView` |
+| Collaboration | `collaboration` | `CollaborationView` |
+| Reviews | `reviews` | `ReviewsView` |
 | Reporting | `reporting` | `ReportingView` |
 | Personal Todos | `todos` | `PersonalTodoView` |
 | Time Keeping | `time` | `TimeKeepingView` |
@@ -450,7 +532,8 @@ See `DESIGN.md` for the full Meta-inspired design system.
 * Full API sync for projects/tasks (replace or mirror localStorage)
 * Real-time multi-user collaboration (WebSocket or SSE against Kanflow server)
 * File attachments on tasks
-* Activity log / audit trail
+* Thin stdio MCP for claim/check/release against Kanflow sessions API (agents today can use REST)
+* Line-level merge-tree conflict prediction (AgentBoardMCP specialty)
 * Push notifications
 * Mobile responsive layout
 * Advanced AI: auto-assign, deadline prediction, workload balancing

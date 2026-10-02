@@ -13,6 +13,8 @@ import KanbanView from './KanbanView';
 vi.mock('../lib/api', () => ({
   api: {
     getProjects: vi.fn().mockRejectedValue(new Error('offline')),
+    getUsers: vi.fn().mockRejectedValue(new Error('offline')),
+    getMe: vi.fn().mockRejectedValue(new Error('offline')),
     getColumns: vi.fn().mockRejectedValue(new Error('offline')),
     getTasks: vi.fn().mockRejectedValue(new Error('offline')),
     createTask: vi.fn().mockRejectedValue(new Error('offline')),
