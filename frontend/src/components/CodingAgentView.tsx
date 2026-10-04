@@ -46,7 +46,13 @@ export default function CodingAgentView() {
   }, []);
 
   useEffect(() => {
-    scrollerRef.current?.scrollTo({ top: scrollerRef.current.scrollHeight });
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    if (typeof scroller.scrollTo === 'function') {
+      scroller.scrollTo({ top: scroller.scrollHeight });
+    } else {
+      scroller.scrollTop = scroller.scrollHeight;
+    }
   }, [blocks]);
 
   const running = useMemo(() => blocks.some((block) => block.running), [blocks]);
@@ -54,7 +60,9 @@ export default function CodingAgentView() {
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
     const value = command.trim();
-    if (!value || !socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) return;
+    if (running || !value || !socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
+      return;
+    }
     socketRef.current.send(
       JSON.stringify({
         type: 'input',
@@ -63,6 +71,11 @@ export default function CodingAgentView() {
       }),
     );
     setCommand('');
+  };
+
+  const interrupt = () => {
+    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) return;
+    socketRef.current.send(JSON.stringify({ type: 'interrupt' }));
   };
 
   return (
@@ -106,12 +119,18 @@ export default function CodingAgentView() {
           value={command}
           onChange={(event) => setCommand(event.target.value)}
           placeholder={running ? 'Command is running…' : 'Type a command'}
-          disabled={!connected}
+          disabled={!connected || running}
           autoFocus
         />
-        <button type="submit" disabled={!connected || !command.trim()} className="kf-btn-primary px-4 py-2.5 text-sm rounded-xl disabled:opacity-50">
-          Run
-        </button>
+        {running ? (
+          <button type="button" onClick={interrupt} className="kf-btn-primary px-4 py-2.5 text-sm rounded-xl">
+            Stop
+          </button>
+        ) : (
+          <button type="submit" disabled={!connected || !command.trim()} className="kf-btn-primary px-4 py-2.5 text-sm rounded-xl disabled:opacity-50">
+            Run
+          </button>
+        )}
       </form>
       {error && <p className="text-sm text-kf-error">{error}</p>}
     </div>

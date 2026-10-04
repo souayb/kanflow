@@ -47,6 +47,8 @@ pub struct AppState {
     github: Arc<RwLock<Option<GithubClient>>>,
     pub github_app: Option<Arc<GithubAppConfig>>,
     pending_github_auth: Arc<Mutex<HashMap<String, PendingGithubAuth>>>,
+    /// Working directory for the in-app coding-agent terminal.
+    pub terminal_cwd: String,
 }
 
 impl AppState {
@@ -58,7 +60,13 @@ impl AppState {
             github: Arc::new(RwLock::new(None)),
             github_app: None,
             pending_github_auth: Arc::new(Mutex::new(HashMap::new())),
+            terminal_cwd: ".".into(),
         }
+    }
+
+    pub fn with_terminal_cwd(mut self, cwd: String) -> Self {
+        self.terminal_cwd = cwd;
+        self
     }
 
     /// Attach a configured GitHub client (builder-style, used at startup).
