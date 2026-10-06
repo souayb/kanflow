@@ -44,6 +44,18 @@ describe('buildTerminalWsUrl', () => {
       }),
     ).toBe('wss://kanflow.example/api/v1/terminal/ws?token=tok');
   });
+
+  it('treats an empty API URL as unset so Docker same-origin still works', () => {
+    expect(
+      buildTerminalWsUrl({
+        token: 'tok',
+        protocol: 'http:',
+        host: 'localhost:3100',
+        origin: 'http://localhost:3100',
+        apiUrl: '',
+      }),
+    ).toBe('ws://localhost:3100/api/v1/terminal/ws?token=tok');
+  });
 });
 
 describe('applyTerminalEvent', () => {

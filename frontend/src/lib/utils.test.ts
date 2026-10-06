@@ -10,8 +10,8 @@ describe('utils', () => {
   });
 
   it('getPriorityColor maps priorities to design tokens', () => {
-    expect(getPriorityColor('high')).toContain('#C80A28');
-    expect(getPriorityColor('medium')).toContain('#F7B928');
-    expect(getPriorityColor('low')).toContain('#007D1E');
+    expect(getPriorityColor('high')).toContain('#eb5757');
+    expect(getPriorityColor('medium')).toContain('#f7b928');
+    expect(getPriorityColor('low')).toContain('#27a644');
   });
 });

@@ -36,7 +36,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import DashboardCustomizer from './DashboardCustomizer';
 import { summarizeProjectProgress } from '../lib/ai';
 
-const CHART_PALETTE = ['#5D6C7B', '#F7B928', '#0064E0', '#31A24C', '#A121CE'];
+const CHART_PALETTE = ['#8a8f98', '#f7b928', '#0064e0', '#27a644', '#8b5cf6'];
 
 function KanflowAiInsightCard() {
   const { tasks, projects, activeProjectId } = useApp();
@@ -82,7 +82,7 @@ function KanflowAiInsightCard() {
       initial={{ opacity: 0, scale: 0.98 }}
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.98 }}
-      className="lg:col-span-1 bg-kf-meta-blue p-8 rounded-[24px] shadow-lg relative overflow-hidden group text-kf-white"
+      className="lg:col-span-1 bg-kf-meta-blue p-8 rounded-xl shadow-lg relative overflow-hidden group text-kf-white"
     >
       <div className="absolute top-0 right-0 w-40 h-40 bg-kf-meta-blue-light/30 rounded-full blur-3xl -translate-y-10 translate-x-10 group-hover:scale-110 transition-transform duration-700" />
       <div className="relative z-10">
@@ -104,7 +104,7 @@ function KanflowAiInsightCard() {
           type="button"
           disabled={loading}
           onClick={() => void load()}
-          className="w-full py-3 kf-btn-primary !bg-kf-white !text-kf-meta-blue hover:!bg-kf-baby-blue disabled:opacity-60"
+          className="w-full py-3 kf-btn-primary !bg-kf-carbon !text-kf-meta-blue hover:!bg-kf-baby-blue disabled:opacity-60"
         >
           <Zap size={14} className="inline mr-2 align-middle" />
           Refresh insight
@@ -210,7 +210,7 @@ export default function DashboardView() {
     <div className="space-y-8 md:space-y-10 pb-12 custom-scrollbar">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl md:text-4xl font-medium tracking-tight text-kf-charcoal">Dashboard</h2>
+          <h2 className="text-2xl md:text-4xl font-medium tracking-[-0.022em] text-kf-paper">Dashboard</h2>
           <p className="text-kf-slate text-sm mt-2">Overview for {activeProject?.name ?? 'your workspace'}.</p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
@@ -308,35 +308,35 @@ export default function DashboardView() {
                       <AreaChart data={activityData}>
                         <defs>
                           <linearGradient id="colorCompleted" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#31A24C" stopOpacity={0.25} />
-                            <stop offset="95%" stopColor="#31A24C" stopOpacity={0} />
+                            <stop offset="5%" stopColor="#27a644" stopOpacity={0.25} />
+                            <stop offset="95%" stopColor="#27a644" stopOpacity={0} />
                           </linearGradient>
                           <linearGradient id="colorAdded" x1="0" y1="0" x2="0" y2="1">
                             <stop offset="5%" stopColor="#0064E0" stopOpacity={0.22} />
                             <stop offset="95%" stopColor="#0064E0" stopOpacity={0} />
                           </linearGradient>
                         </defs>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#DEE3E9" />
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#23252a" />
                         <XAxis
                           dataKey="name"
                           axisLine={false}
                           tickLine={false}
-                          tick={{ fontSize: 11, fill: '#5D6C7B', fontWeight: 500 }}
+                          tick={{ fontSize: 11, fill: '#8a8f98', fontWeight: 500 }}
                         />
-                        <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#5D6C7B', fontWeight: 500 }} />
+                        <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#8a8f98', fontWeight: 500 }} />
                         <Tooltip
                           contentStyle={{
-                            backgroundColor: '#FFFFFF',
+                            backgroundColor: '#0f1011',
                             borderRadius: '12px',
-                            border: '1px solid #DEE3E9',
+                            border: '1px solid #23252a',
                             boxShadow: 'var(--shadow-kf-card)',
                           }}
-                          labelStyle={{ color: '#1C2B33', fontWeight: 600 }}
+                          labelStyle={{ color: '#ffffff', fontWeight: 510 }}
                         />
                         <Area
                           type="monotone"
                           dataKey="completed"
-                          stroke="#31A24C"
+                          stroke="#27a644"
                           fillOpacity={1}
                           fill="url(#colorCompleted)"
                           strokeWidth={2}
@@ -376,9 +376,9 @@ export default function DashboardView() {
                         </Pie>
                         <Tooltip
                           contentStyle={{
-                            backgroundColor: '#FFFFFF',
+                            backgroundColor: '#0f1011',
                             borderRadius: '12px',
-                            border: '1px solid #DEE3E9',
+                            border: '1px solid #23252a',
                           }}
                         />
                       </PieChart>

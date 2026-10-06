@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { getAvatarColor, getAvatarInitials } from './utils';
 
-const AVATAR_COLORS = ['#0064E0', '#9360F7', '#F3425F', '#2ABBA7', '#FB724B', '#465A69'];
+const AVATAR_COLORS = ['#0064E0', '#6366F1', '#8B5CF6', '#02B8CC', '#FB724B', '#27A644'];
 
 describe('getAvatarInitials', () => {
   it('returns first letters of two-word name', () => {

@@ -66,7 +66,7 @@ export default function PersonalTodoView() {
     <div className="max-w-6xl mx-auto space-y-8 pb-12 custom-scrollbar">
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
-          <h2 className="text-2xl md:text-4xl font-medium tracking-tight text-kf-charcoal">Personal todos</h2>
+          <h2 className="text-2xl md:text-4xl font-medium tracking-[-0.022em] text-kf-paper">Personal todos</h2>
           <p className="text-kf-slate text-sm mt-2">Private list and Eisenhower matrix (MISSION §5.7).</p>
         </div>
         <div className="flex bg-kf-warm-gray p-1 rounded-full border border-kf-divider-gray">
@@ -192,7 +192,7 @@ export default function PersonalTodoView() {
                   <button
                     type="button"
                     onClick={() => addPersonalTodo(task.title, task.id)}
-                    className="p-2 bg-kf-baby-blue text-kf-meta-blue rounded-[10px] hover:bg-kf-meta-blue hover:text-kf-white transition-colors shrink-0"
+                    className="p-2 bg-kf-baby-blue text-kf-meta-blue rounded-md hover:bg-kf-meta-blue hover:text-kf-white transition-colors shrink-0"
                   >
                     <Plus size={14} />
                   </button>
@@ -214,7 +214,7 @@ export default function PersonalTodoView() {
                             key={q}
                             type="button"
                             onClick={() => updatePersonalTodo(todo.id, { quadrant: q as 1 | 2 | 3 | 4 })}
-                            className="w-8 h-8 flex items-center justify-center rounded-[8px] bg-kf-white border border-kf-divider-gray text-[11px] font-medium text-kf-slate hover:border-kf-meta-blue hover:text-kf-meta-blue transition-colors"
+                            className="w-8 h-8 flex items-center justify-center rounded-[8px] bg-kf-carbon border border-kf-divider-gray text-[11px] font-medium text-kf-slate hover:border-kf-meta-blue hover:text-kf-meta-blue transition-colors"
                           >
                             Q{q}
                           </button>
@@ -260,15 +260,15 @@ function MatrixQuadrant({
   const header: Record<QuadrantVariant, string> = {
     urgent: 'text-kf-error',
     plan: 'text-kf-meta-blue',
-    delegate: 'text-[#9a7200]',
+    delegate: 'text-kf-warning',
     later: 'text-kf-slate',
   };
 
   return (
-    <div className={cn('p-5 md:p-6 rounded-[24px] border flex flex-col min-h-[280px] transition-colors', shell[variant])}>
+    <div className={cn('p-5 md:p-6 rounded-xl border flex flex-col min-h-[280px] transition-colors', shell[variant])}>
       <div className="mb-4">
         <div className="flex items-center gap-2 mb-1">
-          <div className={cn('p-1.5 rounded-[10px] bg-kf-white/80 border border-kf-divider-gray', header[variant])}>
+          <div className={cn('p-1.5 rounded-md bg-kf-carbon/80 border border-kf-divider-gray', header[variant])}>
             {icon}
           </div>
           <h3 className="font-medium text-sm text-kf-charcoal">{title}</h3>
@@ -282,7 +282,7 @@ function MatrixQuadrant({
             <motion.div key={todo.id} initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.98 }} className="group relative">
               <div
                 className={cn(
-                  'p-3 rounded-[12px] border flex items-start gap-2 transition-all bg-kf-white/90',
+                  'p-3 rounded-[12px] border flex items-start gap-2 transition-all bg-kf-carbon/90',
                   todo.completed ? 'border-kf-divider-gray opacity-60' : 'border-kf-divider-gray hover:border-kf-meta-blue/20',
                 )}
               >
@@ -347,8 +347,8 @@ function TodoItem({
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, scale: 0.98 }}
       className={cn(
-        'flex items-center justify-between p-4 rounded-[16px] border transition-colors group gap-3',
-        todo.completed ? 'bg-kf-soft-gray border-kf-divider-gray' : 'bg-kf-white border-kf-divider-gray hover:border-kf-meta-blue/20',
+        'flex items-center justify-between p-4 rounded-xl border transition-colors group gap-3',
+        todo.completed ? 'bg-kf-soft-gray border-kf-divider-gray' : 'bg-kf-carbon border-kf-divider-gray hover:border-kf-meta-blue/20',
       )}
     >
       <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -374,7 +374,7 @@ function TodoItem({
       </div>
 
       <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-        <div className="flex bg-kf-warm-gray rounded-[10px] p-0.5 border border-kf-divider-gray">
+        <div className="flex bg-kf-warm-gray rounded-md p-0.5 border border-kf-divider-gray">
           {([1, 2, 3, 4] as const).map((q) => (
             <button
               key={q}

@@ -15,11 +15,11 @@ export function formatDate(timestamp: number): string {
 
 const AVATAR_COLORS = [
   '#0064E0', // meta blue
-  '#9360F7', // grape
-  '#F3425F', // cherry
-  '#2ABBA7', // teal
+  '#6366F1', // iris
+  '#8B5CF6', // lavender
+  '#02B8CC', // signal teal
   '#FB724B', // tomato
-  '#465A69', // icon secondary
+  '#27A644', // pulse green
 ];
 
 export function getAvatarColor(seed: string): string {
@@ -40,11 +40,11 @@ export function getAvatarInitials(name: string): string {
 export function getPriorityColor(priority: string) {
   switch (priority) {
     case 'high':
-      return 'bg-[rgba(255,123,145,0.15)] text-[#C80A28] border border-[#E41E3F]/30';
+      return 'bg-[rgba(235,87,87,0.14)] text-[#eb5757] border border-[#eb5757]/30';
     case 'medium':
-      return 'bg-[rgba(255,226,0,0.15)] text-[#9a7200] border border-[#F7B928]/40';
+      return 'bg-[rgba(247,185,40,0.14)] text-[#f7b928] border border-[#f7b928]/30';
     case 'low':
-      return 'bg-[rgba(36,228,0,0.12)] text-[#007D1E] border border-[#31A24C]/35';
+      return 'bg-[rgba(39,166,68,0.14)] text-[#27a644] border border-[#27a644]/30';
     default:
       return 'bg-kf-warm-gray text-kf-slate border border-kf-divider-gray';
   }

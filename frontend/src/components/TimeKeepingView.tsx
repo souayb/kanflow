@@ -44,7 +44,7 @@ export default function TimeKeepingView() {
   return (
     <div className="max-w-6xl mx-auto space-y-8 pb-12 custom-scrollbar">
       <div>
-        <h2 className="text-2xl md:text-4xl font-medium tracking-tight text-kf-charcoal">Time keeping</h2>
+        <h2 className="text-2xl md:text-4xl font-medium tracking-[-0.022em] text-kf-paper">Time keeping</h2>
         <p className="text-kf-slate text-sm mt-2">Start a timer on a task and review recent entries.</p>
       </div>
 
@@ -83,7 +83,7 @@ export default function TimeKeepingView() {
                   <button
                     type="button"
                     onClick={() => stopTimeLog(activeTimer.taskId)}
-                    className="kf-btn-primary !bg-kf-error hover:!bg-[#C80A28] gap-2"
+                    className="kf-btn-primary !bg-kf-error hover:!bg-kf-error/80 gap-2"
                   >
                     <Square size={18} fill="currentColor" />
                     Stop timer
@@ -107,10 +107,10 @@ export default function TimeKeepingView() {
                 return (
                   <div
                     key={entry.id}
-                    className="flex items-center justify-between p-4 bg-kf-warm-gray border border-kf-divider-gray rounded-[16px] hover:border-kf-meta-blue/20 transition-colors"
+                    className="flex items-center justify-between p-4 bg-kf-warm-gray border border-kf-divider-gray rounded-xl hover:border-kf-meta-blue/20 transition-colors"
                   >
                     <div className="flex items-center gap-4 min-w-0">
-                      <div className="w-10 h-10 rounded-[12px] bg-kf-white flex items-center justify-center text-kf-icon-secondary border border-kf-divider-gray shrink-0">
+                      <div className="w-10 h-10 rounded-[12px] bg-kf-carbon flex items-center justify-center text-kf-icon-secondary border border-kf-divider-gray shrink-0">
                         <Activity size={18} />
                       </div>
                       <div className="min-w-0">
@@ -133,7 +133,7 @@ export default function TimeKeepingView() {
         </div>
 
         <div className="space-y-6">
-          <div className="bg-kf-meta-blue p-8 rounded-[24px] shadow-lg text-kf-white relative overflow-hidden">
+          <div className="bg-kf-meta-blue p-8 rounded-xl shadow-lg text-kf-white relative overflow-hidden">
             <div className="absolute bottom-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-2xl translate-y-10 translate-x-10" />
             <div className="relative z-10">
               <h3 className="text-xs font-medium text-white/80 mb-2 uppercase tracking-wide">This week (sample)</h3>
@@ -154,10 +154,10 @@ export default function TimeKeepingView() {
                   type="button"
                   onClick={() => startTimeLog(task.id, 'Session log')}
                   className={cn(
-                    'w-full p-4 rounded-[16px] flex items-center justify-between gap-3 transition-all text-left border',
+                    'w-full p-4 rounded-xl flex items-center justify-between gap-3 transition-all text-left border',
                     activeTimer?.taskId === task.id
                       ? 'bg-kf-baby-blue border-kf-meta-blue/30 ring-1 ring-kf-meta-blue/15'
-                      : 'bg-kf-white border-kf-divider-gray hover:border-kf-meta-blue/25',
+                      : 'bg-kf-carbon border-kf-divider-gray hover:border-kf-meta-blue/25',
                   )}
                 >
                   <div className="min-w-0">
@@ -173,7 +173,7 @@ export default function TimeKeepingView() {
                   </div>
                   <div
                     className={cn(
-                      'w-9 h-9 rounded-[10px] flex items-center justify-center shrink-0 transition-colors',
+                      'w-9 h-9 rounded-md flex items-center justify-center shrink-0 transition-colors',
                       activeTimer?.taskId === task.id ? 'bg-kf-meta-blue text-kf-white' : 'bg-kf-warm-gray text-kf-icon-secondary',
                     )}
                   >

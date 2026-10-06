@@ -1,92 +1,136 @@
 /* Fonts: use <link> in index.html. Do not @import Google Fonts here — Tailwind expands first and PostCSS rejects @import after other rules. */
 @import "tailwindcss";
 
-/* Kanflow — Meta Store–inspired tokens (DESIGN.md) */
+/* Kanflow — Linear-like dark theme (DESIGN.md), Meta Blue as the single chromatic CTA */
 @theme {
-  --font-sans: "Montserrat", "Helvetica Neue", Helvetica, Arial, ui-sans-serif, system-ui, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, monospace;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-weight-medium: 510;
+  --font-weight-semibold: 510;
+  --font-weight-bold: 590;
+
+  --color-kf-void: #08090a;
+  --color-kf-carbon: #0f1011;
+  --color-kf-obsidian: #161718;
+  --color-kf-graphite: #23252a;
+  --color-kf-smoke: #383b3f;
+  --color-kf-ash: #62666d;
+  --color-kf-fog: #8a8f98;
+  --color-kf-mist: #d0d6e0;
+  --color-kf-bone: #e5e5e6;
+  --color-kf-paper: #ffffff;
 
   --color-kf-white: #ffffff;
-  --color-kf-soft-gray: #f1f4f7;
-  --color-kf-warm-gray: #f7f8fa;
-  --color-kf-web-wash: #f0f2f5;
-  --color-kf-baby-blue: #e8f3ff;
-  --color-kf-near-black: #1c1e21;
-  --color-kf-charcoal: #1c2b33;
-  --color-kf-slate: #5d6c7b;
-  --color-kf-secondary-text: #65676b;
-  --color-kf-icon-secondary: #465a69;
-  --color-kf-divider: #ced0d4;
-  --color-kf-divider-gray: #dee3e9;
+  --color-kf-soft-gray: #08090a;
+  --color-kf-warm-gray: #161718;
+  --color-kf-web-wash: #161718;
+  --color-kf-baby-blue: rgba(0, 100, 224, 0.16);
+  --color-kf-near-black: #08090a;
+  --color-kf-charcoal: #ffffff;
+  --color-kf-slate: #d0d6e0;
+  --color-kf-secondary-text: #8a8f98;
+  --color-kf-icon-secondary: #8a8f98;
+  --color-kf-divider: #383b3f;
+  --color-kf-divider-gray: #23252a;
   --color-kf-meta-blue: #0064e0;
   --color-kf-meta-blue-hover: #0143b5;
   --color-kf-meta-blue-pressed: #004bb9;
   --color-kf-meta-blue-light: #47a5fa;
-  --color-kf-link: #385898;
-  --color-kf-success: #31a24c;
-  --color-kf-error: #e41e3f;
+  --color-kf-link: #47a5fa;
+  --color-kf-success: #27a644;
+  --color-kf-error: #eb5757;
   --color-kf-warning: #f7b928;
-  --color-kf-overlay: rgba(0, 0, 0, 0.6);
+  --color-kf-overlay: rgba(0, 0, 0, 0.72);
 
-  --shadow-kf-card: 0 12px 28px 0 rgba(0, 0, 0, 0.2), 0 2px 4px 0 rgba(0, 0, 0, 0.1);
-  --shadow-kf-subtle: 0 2px 4px 0 rgba(0, 0, 0, 0.1);
+  --shadow-kf-card: rgb(35, 37, 42) 0px 0px 0px 1px inset;
+  --shadow-kf-subtle: rgba(0, 0, 0, 0.4) 0px 2px 4px 0px;
 
-  --radius-kf-input: 8px;
-  --radius-kf-card: 20px;
-  --radius-kf-feature: 24px;
-  --radius-kf-pill: 100px;
+  --radius-kf-input: 6px;
+  --radius-kf-card: 12px;
+  --radius-kf-feature: 12px;
+  --radius-kf-pill: 9999px;
 }
 
 @layer base {
   html {
     @apply antialiased;
+    font-feature-settings: "cv01" 1, "ss03" 1, "zero" 1;
   }
   body {
-    @apply font-sans text-kf-charcoal bg-kf-soft-gray;
-    font-feature-settings: "ss01" 0, "ss02" 0;
+    @apply font-sans bg-kf-void text-kf-mist;
+    font-size: 16px;
+    font-weight: 400;
+    line-height: 1.5;
+    letter-spacing: -0.011em;
+    font-feature-settings: "cv01" 1, "ss03" 1, "zero" 1;
+  }
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply text-kf-paper font-medium;
+    letter-spacing: -0.022em;
+    line-height: 1.15;
+  }
+  h1 {
+    font-size: 2rem;
+    line-height: 1.13;
+  }
+  h2 {
+    font-size: 1.5rem;
+    letter-spacing: -0.012em;
+    line-height: 1.33;
+  }
+  h3 {
+    font-size: 1.25rem;
+    letter-spacing: -0.012em;
+    line-height: 1.33;
   }
 }
 
 @layer components {
   .kf-nav-link {
-    @apply text-kf-charcoal/90 text-[16px] font-medium tracking-tight;
-    @apply hover:underline underline-offset-4 decoration-kf-divider-gray;
+    @apply text-kf-mist text-[13px] font-normal tracking-[-0.011em];
+    @apply hover:underline underline-offset-4 decoration-kf-graphite;
   }
   .kf-btn-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded-full px-[22px] py-2.5;
-    @apply bg-kf-meta-blue text-kf-white text-sm font-normal;
-    @apply tracking-[-0.14px] border-0 transition-all duration-200;
-    @apply hover:bg-kf-meta-blue-hover hover:scale-110 active:scale-90 active:bg-kf-meta-blue-pressed;
+    @apply inline-flex items-center justify-center gap-2 rounded-[6px] px-4 py-2.5;
+    @apply bg-kf-meta-blue text-kf-paper text-sm font-medium;
+    @apply tracking-[-0.011em] border-0 transition-colors duration-150;
+    @apply hover:bg-kf-meta-blue-hover active:bg-kf-meta-blue-pressed;
     @apply focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-kf-meta-blue-light;
-    @apply disabled:bg-kf-divider-gray disabled:text-[#8595a4] disabled:cursor-not-allowed disabled:hover:scale-100;
+    @apply disabled:bg-kf-graphite disabled:text-kf-ash disabled:cursor-not-allowed;
   }
   .kf-btn-secondary {
-    @apply inline-flex items-center justify-center gap-2 rounded-full px-[22px] py-2.5 border-2 text-sm font-normal;
-    @apply border-[rgba(10,19,23,0.12)] text-kf-charcoal/50 bg-transparent tracking-[-0.14px];
-    @apply transition-all duration-200;
-    @apply hover:bg-[rgba(70,90,105,0.7)] hover:text-kf-white;
+    @apply inline-flex items-center justify-center gap-2 rounded-[6px] px-3 py-2 border text-[13px] font-normal;
+    @apply border-kf-graphite text-kf-mist bg-transparent tracking-[-0.011em];
+    @apply transition-colors duration-150;
+    @apply hover:bg-white/[0.04] hover:text-kf-paper;
   }
   .kf-card {
-    @apply bg-kf-white rounded-[20px] border border-kf-divider-gray/80;
-    box-shadow: var(--shadow-kf-subtle);
-    @apply transition-all duration-300;
+    @apply bg-kf-carbon rounded-xl border-0;
+    box-shadow: var(--shadow-kf-card);
+    @apply transition-colors duration-150;
   }
   .kf-card-elevated {
-    @apply bg-kf-white rounded-[20px] border border-kf-divider-gray/60;
-    box-shadow: var(--shadow-kf-card);
-    @apply transition-all duration-300 hover:-translate-y-0.5;
+    @apply bg-kf-carbon rounded-xl border-0;
+    box-shadow: var(--shadow-kf-card), rgba(8, 9, 10, 0.6) 0px 4px 32px 0px;
+    @apply transition-colors duration-150;
   }
   .kf-input {
-    @apply w-full rounded-[8px] border border-kf-divider bg-kf-white px-3 py-2.5 text-base text-kf-charcoal;
-    @apply placeholder:text-kf-secondary-text transition-shadow duration-200;
-    @apply focus:border-[hsl(214,89%,52%)] focus:ring-[3px] focus:ring-[hsl(214,89%,52%)]/25 focus:outline-none;
+    @apply w-full rounded-[6px] border px-3.5 py-3 text-sm text-kf-mist;
+    @apply placeholder:text-kf-fog transition-colors duration-150;
+    background: rgba(255, 255, 255, 0.02);
+    border-color: rgba(255, 255, 255, 0.08);
+    @apply focus:border-kf-mist focus:ring-0 focus:outline-none;
   }
   .kf-section-dark {
-    @apply bg-kf-near-black text-kf-white;
+    @apply bg-kf-carbon text-kf-paper;
+    box-shadow: var(--shadow-kf-card);
   }
   .kf-glass-header {
-    background: rgba(255, 255, 255, 0.92);
-    @apply backdrop-blur-md border-b border-black/10;
+    background: rgba(15, 16, 17, 0.86);
+    @apply backdrop-blur-md border-b border-kf-graphite;
   }
 }
 
@@ -100,12 +144,12 @@
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: var(--color-kf-divider-gray);
+  background: var(--color-kf-graphite);
   border-radius: 10px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: var(--color-kf-divider);
+  background: var(--color-kf-smoke);
 }
 
 .no-scrollbar::-webkit-scrollbar {

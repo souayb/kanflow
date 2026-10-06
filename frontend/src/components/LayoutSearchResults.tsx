@@ -41,7 +41,7 @@ export default function LayoutSearchResults({ query, open, onClose, onPickTask }
     <div
       id="kanflow-global-search-results"
       ref={wrapRef}
-      className="absolute right-0 top-full mt-2 w-[min(100vw-2rem,22rem)] max-h-[min(70vh,22rem)] overflow-y-auto custom-scrollbar kf-card-elevated rounded-2xl border border-kf-divider-gray shadow-2xl z-50 py-2"
+      className="absolute right-0 top-full mt-2 w-[min(100vw-2rem,22rem)] max-h-[min(70vh,22rem)] overflow-y-auto custom-scrollbar kf-card-elevated z-50 py-2"
       role="listbox"
       aria-label="Search results"
     >

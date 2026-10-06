@@ -324,11 +324,11 @@ export default function KanbanView() {
 
   return (
     <div className="h-full flex flex-col gap-6 md:gap-8 overflow-hidden">
-      <div className="kf-section-dark rounded-[24px] px-6 py-8 md:px-10 md:py-10 shadow-inner relative">
+      <div className="kf-section-dark rounded-xl px-6 py-8 md:px-10 md:py-10 shadow-inner relative">
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-6">
           <div>
             <p className="text-sm text-kf-slate font-normal mb-2">Active project</p>
-            <h2 className="text-2xl md:text-4xl font-medium tracking-tight text-kf-white">{activeProject.name}</h2>
+            <h2 className="text-2xl md:text-4xl font-medium tracking-[-0.022em] text-kf-paper">{activeProject.name}</h2>
             <p className="text-kf-slate mt-2 max-w-xl text-sm md:text-base leading-relaxed">{activeProject.description}</p>
             {hasFilters && (
               <p className="text-xs text-kf-white/70 mt-3 font-medium">
@@ -363,7 +363,7 @@ export default function KanbanView() {
                 <div
                   role="region"
                   aria-label="Board filters"
-                  className="absolute right-0 z-40 mt-2 w-[min(100vw-2rem,22rem)] rounded-2xl border border-kf-divider-gray bg-kf-white shadow-2xl p-4 text-kf-charcoal"
+                  className="absolute right-0 z-40 mt-2 w-[min(100vw-2rem,22rem)] rounded-xl border border-kf-divider-gray bg-kf-carbon p-4 text-kf-charcoal"
                 >
                   <div className="flex items-center justify-between mb-3">
                     <span className="text-xs font-semibold uppercase tracking-wider text-kf-slate">Filters</span>
@@ -500,7 +500,7 @@ export default function KanbanView() {
                   setFilterOpen(false);
                   setViewOpen((o) => !o);
                 }}
-                className="kf-btn-primary !bg-kf-meta-blue-light !text-kf-near-black hover:!bg-kf-white gap-2"
+                className="kf-btn-primary !bg-kf-meta-blue-light !text-kf-near-black hover:!bg-kf-carbon gap-2"
               >
                 <LayoutGrid size={16} />
                 View
@@ -510,7 +510,7 @@ export default function KanbanView() {
                 <div
                   role="region"
                   aria-label="Board view options"
-                  className="absolute right-0 z-40 mt-2 w-[min(100vw-2rem,20rem)] rounded-2xl border border-kf-divider-gray bg-kf-white shadow-2xl p-4 text-kf-charcoal"
+                  className="absolute right-0 z-40 mt-2 w-[min(100vw-2rem,20rem)] rounded-xl border border-kf-divider-gray bg-kf-carbon p-4 text-kf-charcoal"
                 >
                   <div className="flex items-center justify-between mb-3">
                     <span className="text-xs font-semibold uppercase tracking-wider text-kf-slate">View</span>
@@ -532,7 +532,7 @@ export default function KanbanView() {
                       className={cn(
                         'flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-colors',
                         viewOptions.cardDensity === 'comfortable'
-                          ? 'bg-kf-white text-kf-charcoal shadow-sm'
+                          ? 'bg-kf-carbon text-kf-charcoal shadow-sm'
                           : 'text-kf-slate hover:text-kf-charcoal',
                       )}
                     >
@@ -545,7 +545,7 @@ export default function KanbanView() {
                       className={cn(
                         'flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-colors',
                         viewOptions.cardDensity === 'compact'
-                          ? 'bg-kf-white text-kf-charcoal shadow-sm'
+                          ? 'bg-kf-carbon text-kf-charcoal shadow-sm'
                           : 'text-kf-slate hover:text-kf-charcoal',
                       )}
                     >
@@ -722,7 +722,7 @@ export default function KanbanView() {
                   <button
                     type="button"
                     onClick={() => setIsAddingTask(column.id)}
-                    className="w-full py-3 min-h-[44px] flex items-center justify-center gap-2 text-sm font-medium text-kf-slate hover:bg-kf-white hover:text-kf-charcoal rounded-[20px] border border-dashed border-kf-divider-gray transition-all group/addbtn bg-kf-white/60"
+                    className="w-full py-3 min-h-[44px] flex items-center justify-center gap-2 text-sm font-medium text-kf-slate hover:bg-kf-carbon hover:text-kf-charcoal rounded-xl border border-dashed border-kf-divider-gray transition-all group/addbtn bg-kf-carbon/60"
                   >
                     <Plus size={18} className="group-hover/addbtn:scale-110 transition-transform" />
                     Add task
@@ -737,7 +737,7 @@ export default function KanbanView() {
           type="button"
           className={cn(
             COLUMN_WIDTH[viewOptions.columnWidth],
-            'flex-shrink-0 min-h-[100px] flex items-center justify-center gap-2 text-sm font-medium text-kf-slate hover:bg-kf-white hover:border-kf-divider rounded-[20px] border border-dashed border-kf-divider-gray transition-all bg-kf-white/40',
+            'flex-shrink-0 min-h-[100px] flex items-center justify-center gap-2 text-sm font-medium text-kf-slate hover:bg-kf-carbon hover:border-kf-divider rounded-xl border border-dashed border-kf-divider-gray transition-all bg-kf-carbon/40',
           )}
         >
           <Plus size={18} />
@@ -794,7 +794,7 @@ function TaskCard({
       )}
     >
       {isBlocked && (
-        <div className="absolute inset-0 bg-kf-white/70 flex items-center justify-center pointer-events-none group-hover:bg-kf-white/50 transition-all">
+        <div className="absolute inset-0 bg-kf-carbon/70 flex items-center justify-center pointer-events-none group-hover:bg-kf-carbon/50 transition-all">
           <div className="bg-[rgba(255,123,145,0.15)] border border-kf-error/30 px-3 py-1.5 rounded-full flex items-center gap-2">
             <LinkIcon size={12} className="text-kf-error" />
             <span className="text-[10px] font-semibold uppercase tracking-wide text-kf-error">Blocked</span>

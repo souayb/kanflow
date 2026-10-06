@@ -276,7 +276,7 @@ export default function TaskModal({ taskId, onClose }: TaskModalProps) {
 
       <motion.div
         layoutId={taskId}
-        className="relative w-full max-w-2xl bg-kf-white rounded-[24px] shadow-2xl overflow-hidden flex flex-col max-h-[90vh] border border-kf-divider-gray"
+        className="relative w-full max-w-2xl bg-kf-carbon rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] border border-kf-divider-gray"
       >
         <div className="px-6 py-4 border-b border-kf-divider-gray flex items-center justify-between bg-kf-soft-gray/60">
           <div className="flex items-center gap-2 text-xs font-medium text-kf-slate">
@@ -838,7 +838,7 @@ export default function TaskModal({ taskId, onClose }: TaskModalProps) {
                     <p className="text-kf-slate mb-8 max-w-xs mx-auto text-sm leading-relaxed">Run Kanflow AI to refine title, description, and priority.</p>
                     <button 
                       onClick={handleEnhance}
-                      className="px-8 py-3 kf-btn-primary !rounded-2xl text-xs font-semibold uppercase tracking-wide hover:scale-105 active:scale-95 transition-transform"
+                      className="px-8 py-3 kf-btn-primary text-xs font-medium uppercase tracking-wide"
                     >
                       Process Node
                     </button>

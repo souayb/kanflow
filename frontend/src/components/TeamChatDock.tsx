@@ -357,14 +357,14 @@ export default function TeamChatDock() {
             initial={{ opacity: 0, scale: 0.95, y: 16 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 16 }}
-            className="mb-4 w-[min(100vw-1.5rem,28rem)] h-[min(100dvh-6rem,640px)] bg-kf-white border border-kf-divider-gray rounded-[24px] shadow-2xl flex flex-col overflow-hidden"
+            className="mb-4 w-[min(100vw-1.5rem,28rem)] h-[min(100dvh-6rem,640px)] bg-kf-carbon border border-kf-divider-gray rounded-xl shadow-2xl flex flex-col overflow-hidden"
           >
-            <div className="px-4 py-3 bg-kf-charcoal text-kf-white flex items-center justify-between gap-2 shrink-0">
+            <div className="px-4 py-3 bg-kf-obsidian text-kf-paper flex items-center justify-between gap-2 shrink-0">
               <div className="flex items-center gap-2 min-w-0">
                 <MessageSquare size={18} className="shrink-0" strokeWidth={1.75} />
                 <span className="text-sm font-medium truncate">Team chat</span>
               </div>
-              <button type="button" onClick={() => setIsOpen(false)} className="p-2 hover:bg-white/10 rounded-[10px] shrink-0" aria-label="Close">
+              <button type="button" onClick={() => setIsOpen(false)} className="p-2 hover:bg-white/10 rounded-md shrink-0" aria-label="Close">
                 <X size={18} />
               </button>
             </div>
@@ -404,7 +404,7 @@ export default function TeamChatDock() {
                         value={sidebarSearch}
                         onChange={(e) => setSidebarSearch(e.target.value)}
                         placeholder="Search…"
-                        className="w-full pl-7 pr-2 py-1.5 rounded-lg border border-kf-divider-gray bg-kf-white text-kf-charcoal text-[11px] placeholder:text-kf-secondary-text outline-none focus:ring-1 focus:ring-kf-meta-blue"
+                        className="w-full pl-7 pr-2 py-1.5 rounded-lg border border-kf-divider-gray bg-kf-carbon text-kf-charcoal text-[11px] placeholder:text-kf-secondary-text outline-none focus:ring-1 focus:ring-kf-meta-blue"
                       />
                     </div>
                   </div>
@@ -433,7 +433,7 @@ export default function TeamChatDock() {
                         className={cn(
                           'w-full px-2 py-2 rounded-lg text-left font-medium flex items-center gap-1.5 min-w-0',
                           teamKind === 'channel' && selectedChannelId === ch.id
-                            ? 'bg-kf-white text-kf-meta-blue shadow-sm'
+                            ? 'bg-kf-carbon text-kf-meta-blue shadow-sm'
                             : 'text-kf-charcoal hover:bg-kf-warm-gray',
                         )}
                       >
@@ -457,7 +457,7 @@ export default function TeamChatDock() {
                         }}
                         className={cn(
                           'w-full px-2 py-2 rounded-lg text-left font-medium flex items-center gap-2 min-w-0',
-                          teamKind === 'dm' && dmPeerId === u.id ? 'bg-kf-white text-kf-meta-blue shadow-sm' : 'text-kf-charcoal hover:bg-kf-warm-gray',
+                          teamKind === 'dm' && dmPeerId === u.id ? 'bg-kf-carbon text-kf-meta-blue shadow-sm' : 'text-kf-charcoal hover:bg-kf-warm-gray',
                         )}
                       >
                         <Avatar name={u.name} className="w-6 h-6 text-[8px] shrink-0" />
@@ -466,7 +466,7 @@ export default function TeamChatDock() {
                     ))}
                   </div>
                 </div>
-                <div className="flex-1 flex flex-col min-w-0 bg-kf-white relative">
+                <div className="flex-1 flex flex-col min-w-0 bg-kf-carbon relative">
                   <div className="px-3 py-2 border-b border-kf-divider-gray text-[11px] text-kf-slate shrink-0">
                     <div className="font-semibold text-kf-charcoal truncate">
                       {teamKind === 'channel'
@@ -528,7 +528,7 @@ export default function TeamChatDock() {
                         <div
                           className={cn(
                             'text-sm px-3 py-2 rounded-2xl inline-block text-left whitespace-pre-wrap',
-                            m.senderId === currentUser?.id ? 'bg-kf-meta-blue text-kf-white' : 'bg-kf-white border border-kf-divider-gray text-kf-charcoal',
+                            m.senderId === currentUser?.id ? 'bg-kf-meta-blue text-kf-white' : 'bg-kf-carbon border border-kf-divider-gray text-kf-charcoal',
                           )}
                         >
                           {m.content}
@@ -548,7 +548,7 @@ export default function TeamChatDock() {
               </div>
             )}
 
-            <form onSubmit={handleSubmit} className="p-3 border-t border-kf-divider-gray bg-kf-white shrink-0">
+            <form onSubmit={handleSubmit} className="p-3 border-t border-kf-divider-gray bg-kf-carbon shrink-0">
               {!currentUser ? (
                 <p className="text-xs text-kf-slate text-center py-2">Sign in to send messages.</p>
               ) : tab === 'team' && teamKind === 'dm' && !dmPeerId ? (
@@ -575,7 +575,7 @@ export default function TeamChatDock() {
                   <button
                     type="submit"
                     disabled={!input.trim() || (tab === 'team' && !threadKey)}
-                    className="absolute right-1.5 top-1/2 -translate-y-1/2 p-2 bg-kf-meta-blue text-kf-white rounded-[10px] hover:bg-kf-meta-blue-hover disabled:opacity-40"
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 p-2 bg-kf-meta-blue text-kf-white rounded-md hover:bg-kf-meta-blue-hover disabled:opacity-40"
                   >
                     <Send size={14} />
                   </button>
@@ -591,7 +591,7 @@ export default function TeamChatDock() {
         onClick={() => setIsOpen(!isOpen)}
         className={cn(
           'w-14 h-14 min-w-[56px] min-h-[56px] rounded-full flex items-center justify-center shadow-2xl transition-all duration-300 hover:scale-105 active:scale-95 relative',
-          isOpen ? 'bg-kf-charcoal text-kf-white' : 'bg-kf-meta-blue text-kf-white',
+          isOpen ? 'bg-kf-obsidian text-kf-paper' : 'bg-kf-meta-blue text-kf-paper',
         )}
         aria-label={isOpen ? 'Close team chat' : 'Open team chat'}
       >

@@ -44,14 +44,14 @@ export default function AdminCreateUserModal({ onClose }: { onClose: () => void 
       <motion.div
         initial={{ opacity: 0, scale: 0.98 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="relative w-full max-w-md bg-kf-white rounded-[20px] border border-kf-divider-gray shadow-2xl p-6"
+        className="relative w-full max-w-md bg-kf-carbon rounded-xl border border-kf-divider-gray shadow-2xl p-6"
       >
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2 text-kf-charcoal font-medium">
             <UserPlus size={20} className="text-kf-meta-blue" />
             Create user (database)
           </div>
-          <button type="button" onClick={onClose} className="p-2 rounded-[10px] hover:bg-kf-soft-gray text-kf-icon-secondary">
+          <button type="button" onClick={onClose} className="p-2 rounded-md hover:bg-kf-soft-gray text-kf-icon-secondary">
             <X size={18} />
           </button>
         </div>

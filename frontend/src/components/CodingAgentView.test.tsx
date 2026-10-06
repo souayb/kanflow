@@ -1,9 +1,10 @@
 import React from 'react';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppProvider } from '../AppContext';
 import CodingAgentView from './CodingAgentView';
+import { DEFAULT_T3_URL } from '../lib/t3';
 
 vi.mock('../lib/keycloak', () => ({
   default: { token: 'test-token' },
@@ -109,12 +110,59 @@ describe('CodingAgentView', () => {
   });
 
   afterEach(() => {
+    cleanup();
     vi.unstubAllGlobals();
   });
 
-  it('connects, runs a command, and renders streamed output', async () => {
+  it('opens T3 in a new tab and does not connect the in-app shell by default', async () => {
+    const open = vi.fn().mockReturnValue({ closed: false });
+    vi.stubGlobal('open', open);
     const user = userEvent.setup();
     await renderAgent();
+
+    expect(FakeWebSocket.instances).toHaveLength(0);
+    expect(screen.getByLabelText('T3 URL or pairing link')).toHaveValue(DEFAULT_T3_URL);
+    await user.click(screen.getByRole('button', { name: /Open T3 Code/ }));
+    expect(open).toHaveBeenCalledWith(DEFAULT_T3_URL, '_blank', 'noopener,noreferrer');
+  });
+
+  it('saves a pairing URL then opens it', async () => {
+    const open = vi.fn().mockReturnValue({ closed: false });
+    vi.stubGlobal('open', open);
+    const user = userEvent.setup();
+    await renderAgent();
+
+    const field = screen.getByLabelText('T3 URL or pairing link');
+    await user.clear(field);
+    await user.type(field, 'http://127.0.0.1:8787/pair?token=abc');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await user.click(screen.getByRole('button', { name: /Open T3 Code/ }));
+    expect(open).toHaveBeenCalledWith(
+      'http://127.0.0.1:8787/pair?token=abc',
+      '_blank',
+      'noopener,noreferrer',
+    );
+  });
+
+  it('opens a typed T3 URL without requiring Save first', async () => {
+    const open = vi.fn().mockReturnValue({ closed: false });
+    vi.stubGlobal('open', open);
+    const user = userEvent.setup();
+    await renderAgent();
+
+    const field = screen.getByLabelText('T3 URL or pairing link');
+    await user.clear(field);
+    await user.type(field, 'https://app.t3.codes');
+    await user.click(screen.getByRole('button', { name: /Open T3 Code/ }));
+    expect(open).toHaveBeenCalledWith('https://app.t3.codes/', '_blank', 'noopener,noreferrer');
+  });
+
+  it('connects the optional Warp-style shell after switching surfaces', async () => {
+    const user = userEvent.setup();
+    await renderAgent();
+    expect(FakeWebSocket.instances).toHaveLength(0);
+
+    await user.click(screen.getByRole('button', { name: 'In-app terminal' }));
 
     const socket = FakeWebSocket.instances[0];
     expect(socket).toBeDefined();
@@ -157,8 +205,10 @@ describe('CodingAgentView', () => {
     expect(screen.getByRole('button', { name: 'Run' })).toBeDisabled();
   });
 
-  it('shows a connection error when the socket fails', async () => {
+  it('shows a connection error when the optional shell socket fails', async () => {
+    const user = userEvent.setup();
     await renderAgent();
+    await user.click(screen.getByRole('button', { name: 'In-app terminal' }));
     const socket = FakeWebSocket.instances[0];
     await act(async () => {
       socket?.onerror?.(new Event('error'));

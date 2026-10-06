@@ -106,7 +106,7 @@ export default function ProfileDropdown() {
               initial={{ opacity: 0, scale: 0.98, y: 8 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.98, y: 8 }}
-              className="absolute right-0 top-12 w-72 kf-card-elevated z-50 overflow-hidden rounded-[20px]"
+              className="absolute right-0 top-12 w-72 kf-card-elevated z-50 overflow-hidden rounded-xl"
             >
               {panel === 'menu' ? (
                 <div className="p-2">
