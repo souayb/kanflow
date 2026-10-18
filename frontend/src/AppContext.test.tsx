@@ -361,5 +361,127 @@ describe('AppContext', () => {
 
       expect(ctx.personalTodos.find((t) => t.id === id)).toBeUndefined();
     });
+
+    it('updatePersonalTodo sets an Eisenhower quadrant', async () => {
+      let ctx!: ReturnType<typeof useApp>;
+      renderWithContext((c) => { ctx = c; return null; });
+
+      await act(async () => {
+        ctx.addPersonalTodo('Matrix item');
+      });
+      const id = ctx.personalTodos[0].id;
+
+      await act(async () => {
+        ctx.updatePersonalTodo(id, { quadrant: 1 });
+      });
+
+      expect(ctx.personalTodos.find((t) => t.id === id)?.quadrant).toBe(1);
+    });
+  });
+
+  describe('time keeping', () => {
+    it('startTimeLog then stopTimeLog records a duration entry', async () => {
+      let ctx!: ReturnType<typeof useApp>;
+      renderWithContext((c) => { ctx = c; return null; });
+
+      const taskId = ctx.tasks[0]?.id;
+      expect(taskId).toBeDefined();
+      const before = ctx.timeEntries.length;
+
+      await act(async () => {
+        ctx.startTimeLog(taskId!, 'Session log');
+      });
+      expect(ctx.activeTimer?.taskId).toBe(taskId);
+
+      await new Promise((r) => setTimeout(r, 5));
+
+      await act(async () => {
+        ctx.stopTimeLog(taskId!);
+      });
+
+      expect(ctx.activeTimer).toBeNull();
+      expect(ctx.timeEntries.length).toBe(before + 1);
+      expect(ctx.timeEntries[0].taskId).toBe(taskId);
+      expect(ctx.timeEntries[0].duration).toBeGreaterThanOrEqual(0);
+      expect(ctx.getTimeEntriesForTask(taskId!).length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('projects', () => {
+    it('addProject creates a local project with default columns and selects it', async () => {
+      let ctx!: ReturnType<typeof useApp>;
+      renderWithContext((c) => { ctx = c; return null; });
+
+      const before = ctx.projects.length;
+      await act(async () => {
+        await ctx.addProject('QA Board', 'for tests');
+      });
+
+      expect(ctx.projects.length).toBe(before + 1);
+      const created = ctx.projects.find((p) => p.name === 'QA Board');
+      expect(created).toBeDefined();
+      expect(created!.columns.map((c) => c.title)).toEqual(['To Do', 'In Progress', 'Review', 'Done']);
+      expect(ctx.activeProjectId).toBe(created!.id);
+    });
+
+    it('addProject ignores a blank name', async () => {
+      let ctx!: ReturnType<typeof useApp>;
+      renderWithContext((c) => { ctx = c; return null; });
+      const before = ctx.projects.length;
+
+      await act(async () => {
+        await ctx.addProject('   ', '');
+      });
+
+      expect(ctx.projects.length).toBe(before);
+    });
+
+    it('updateProject renames an existing project', async () => {
+      let ctx!: ReturnType<typeof useApp>;
+      renderWithContext((c) => { ctx = c; return null; });
+      const id = ctx.projects[0]!.id;
+
+      await act(async () => {
+        ctx.updateProject(id, { name: 'Renamed launch' });
+      });
+
+      expect(ctx.projects.find((p) => p.id === id)?.name).toBe('Renamed launch');
+    });
+  });
+
+  describe('dependencies and board navigation', () => {
+    it('addDependency records a unique predecessor', async () => {
+      let ctx!: ReturnType<typeof useApp>;
+      renderWithContext((c) => { ctx = c; return null; });
+      const a = ctx.tasks[0]!.id;
+      const b = ctx.tasks[1]!.id;
+
+      await act(async () => {
+        ctx.addDependency(a, b);
+        ctx.addDependency(a, b);
+      });
+
+      expect(ctx.tasks.find((t) => t.id === a)!.dependencies).toEqual(expect.arrayContaining([b]));
+      expect(ctx.tasks.find((t) => t.id === a)!.dependencies.filter((id) => id === b)).toHaveLength(1);
+    });
+
+    it('openTaskOnBoard sets the pending task and bumps boardNavSeq', async () => {
+      let ctx!: ReturnType<typeof useApp>;
+      renderWithContext((c) => { ctx = c; return null; });
+      const id = ctx.tasks[0]!.id;
+      const seq = ctx.boardNavSeq;
+
+      await act(async () => {
+        ctx.openTaskOnBoard(id);
+      });
+
+      expect(ctx.pendingOpenTaskId).toBe(id);
+      expect(ctx.boardNavSeq).toBe(seq + 1);
+
+      await act(async () => {
+        ctx.clearPendingOpenTask();
+      });
+      expect(ctx.pendingOpenTaskId).toBeNull();
+    });
   });
 });

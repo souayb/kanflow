@@ -323,20 +323,35 @@ export default function KanbanView() {
   };
 
   return (
-    <div className="h-full flex flex-col gap-6 md:gap-8 overflow-hidden">
-      <div className="kf-section-dark rounded-xl px-6 py-8 md:px-10 md:py-10 shadow-inner relative">
-        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-6">
-          <div>
-            <p className="text-sm text-kf-slate font-normal mb-2">Active project</p>
-            <h2 className="text-2xl md:text-4xl font-medium tracking-[-0.022em] text-kf-paper">{activeProject.name}</h2>
-            <p className="text-kf-slate mt-2 max-w-xl text-sm md:text-base leading-relaxed">{activeProject.description}</p>
-            {hasFilters && (
-              <p className="text-xs text-kf-white/70 mt-3 font-medium">
-                Showing {filteredTasks.length} of {projectTasks.length} tasks in this project
-              </p>
+    <div className="h-full flex flex-col gap-4 overflow-hidden">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="flex -space-x-2">
+            {teamMembers.map((u) => (
+              <Avatar
+                key={u.id}
+                name={u.name}
+                className="w-8 h-8 text-[10px] border-2 border-kf-void"
+              />
+            ))}
+            {teamMembers.length === 0 && (
+              <span className="text-xs text-kf-fog">No teammates yet</span>
             )}
           </div>
-          <div className="flex flex-wrap items-start justify-end gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => setInviteOpen(true)}
+            className="text-sm font-medium text-kf-link hover:text-kf-paper min-h-[40px]"
+          >
+            Invite teammates
+          </button>
+          {hasFilters && (
+            <p className="text-xs text-kf-fog">
+              {filteredTasks.length} of {projectTasks.length}
+            </p>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center justify-end gap-2 shrink-0">
             <div className="relative" ref={filterWrapRef}>
               <button
                 type="button"
@@ -347,8 +362,8 @@ export default function KanbanView() {
                   setFilterOpen((o) => !o);
                 }}
                 className={cn(
-                  'kf-btn-secondary !text-kf-white/90 !border-white/20 hover:!bg-white/10 gap-2',
-                  hasFilters && '!border-kf-meta-blue-light/60 !bg-white/10',
+                  'kf-btn-secondary gap-2',
+                  hasFilters && 'border-kf-meta-blue/50 bg-kf-baby-blue text-kf-paper',
                 )}
               >
                 <Filter size={16} />
@@ -500,7 +515,7 @@ export default function KanbanView() {
                   setFilterOpen(false);
                   setViewOpen((o) => !o);
                 }}
-                className="kf-btn-primary !bg-kf-meta-blue-light !text-kf-near-black hover:!bg-kf-carbon gap-2"
+                className="kf-btn-secondary gap-2"
               >
                 <LayoutGrid size={16} />
                 View
@@ -622,31 +637,6 @@ export default function KanbanView() {
                 </div>
               )}
             </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="flex -space-x-2">
-            {teamMembers.map((u) => (
-              <Avatar
-                key={u.id}
-                name={u.name}
-                className="w-9 h-9 text-xs border-2 border-kf-white shadow-sm"
-              />
-            ))}
-            {teamMembers.length === 0 && (
-              <span className="text-xs text-kf-slate px-2">No teammates yet</span>
-            )}
-          </div>
-          <button
-            type="button"
-            onClick={() => setInviteOpen(true)}
-            className="text-sm font-medium text-kf-meta-blue hover:text-kf-meta-blue-hover px-2 min-h-[44px]"
-          >
-            Invite teammates
-          </button>
         </div>
       </div>
 
