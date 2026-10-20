@@ -1,4 +1,4 @@
-import { type Project, type User, type Task } from './types';
+import { type Project, type User, type Task, type WorkSession, type ActivityEvent } from './types';
 
 /** Stable UUIDs — match `backend/migrations/20260427120000_seed_demo.sql` (Postgres seed). */
 export const MOCK_USER_ALEX = 'a2000000-0000-4000-8000-000000000001';
@@ -21,8 +21,14 @@ export const MOCK_COL_MIG_PROD = 'c2000000-0000-4000-8000-000000000004';
 export const MOCK_TASK_TYPOGRAPHY = 'd1000000-0000-4000-8000-000000000001';
 export const MOCK_TASK_DARKMODE = 'd1000000-0000-4000-8000-000000000002';
 export const MOCK_TASK_USER_TEST = 'd1000000-0000-4000-8000-000000000003';
+export const MOCK_TASK_COLLAB = 'd1000000-0000-4000-8000-000000000004';
+export const MOCK_TASK_PR_REVIEWS = 'd1000000-0000-4000-8000-000000000005';
 export const MOCK_TASK_LEGACY_API = 'd2000000-0000-4000-8000-000000000001';
 export const MOCK_TASK_STAGING_K8S = 'd2000000-0000-4000-8000-000000000002';
+
+export const MOCK_SESSION_COLLAB = 'e2000000-0000-4000-8000-000000000001';
+export const MOCK_ACTIVITY_COLLAB = 'e3000000-0000-4000-8000-000000000001';
+export const MOCK_ACTIVITY_PR = 'e3000000-0000-4000-8000-000000000002';
 
 /** UTC ms aligned with seed `created_at` / `updated_at` / `due_at` columns */
 const T = {
@@ -43,6 +49,8 @@ const T = {
   taskK8sCreated: 1768572000000,
   taskK8sUpdated: 1768728600000,
   taskK8sDue: 1769763600000,
+  taskCollabCreated: 1769817600000, // 2026-01-31 00:00
+  taskPrCreated: 1769817600000,
 };
 
 export const MOCK_USERS: User[] = [
@@ -137,6 +145,40 @@ export const MOCK_TASKS: Task[] = [
     dependencies: [],
   },
   {
+    id: MOCK_TASK_COLLAB,
+    projectId: MOCK_PROJECT_LAUNCH,
+    title: 'Collaboration overview (agent-aware)',
+    description:
+      'AgentBoardMCP-inspired Collaboration view: who is working on what (humans + agents), Needs-you overlaps, repo folder map from touched files, and a real activity/blame feed. Acceptance: demo users + ≥1 agent session show grouped work, file map, and overlaps when two sessions share a file or the same GitHub issue.',
+    status: MOCK_COL_LAUNCH_TODO,
+    priority: 'high',
+    assigneeId: MOCK_USER_ALEX,
+    tags: ['collaboration', 'agents'],
+    position: 2000,
+    comments: [],
+    dueDate: undefined,
+    createdAt: T.taskCollabCreated,
+    updatedAt: T.taskCollabCreated,
+    dependencies: [],
+  },
+  {
+    id: MOCK_TASK_PR_REVIEWS,
+    projectId: MOCK_PROJECT_LAUNCH,
+    title: 'Add PR reviews option',
+    description:
+      'Create/link GitHub PRs from task branches; persist PR number/URL/state; surface review decision in TaskModal and a Reviews list (Review column or open/approved/changes PRs). Acceptance: with GitHub connected and a branch, create a PR, see status on the task and in Reviews; refresh updates after GitHub changes.',
+    status: MOCK_COL_LAUNCH_TODO,
+    priority: 'high',
+    assigneeId: MOCK_USER_SAM,
+    tags: ['github', 'collaboration'],
+    position: 3000,
+    comments: [],
+    dueDate: undefined,
+    createdAt: T.taskPrCreated,
+    updatedAt: T.taskPrCreated,
+    dependencies: [MOCK_TASK_COLLAB],
+  },
+  {
     id: MOCK_TASK_LEGACY_API,
     projectId: MOCK_PROJECT_MIGRATION,
     title: 'Inventory legacy APIs',
@@ -165,5 +207,53 @@ export const MOCK_TASKS: Task[] = [
     createdAt: T.taskK8sCreated,
     updatedAt: T.taskK8sUpdated,
     dependencies: [],
+  },
+];
+
+/** Demo agent session for Collaboration overview (offline / seed). */
+export const MOCK_WORK_SESSIONS: WorkSession[] = [
+  {
+    id: MOCK_SESSION_COLLAB,
+    projectId: MOCK_PROJECT_LAUNCH,
+    taskId: MOCK_TASK_COLLAB,
+    ownerUserId: MOCK_USER_ALEX,
+    actorKind: 'agent',
+    tool: 'cursor',
+    intent: 'Scaffold Collaboration overview and activity feed',
+    phase: 'implementing',
+    touchedFiles: [
+      'frontend/src/components/CollaborationView.tsx',
+      'frontend/src/types.ts',
+      'backend/crates/kanflow-server/src/handlers/collaboration.rs',
+    ],
+    plannedFiles: ['MISSION.md'],
+    branchName: 'task/collaboration-overview',
+    heartbeatAt: Date.now(),
+    createdAt: T.taskCollabCreated,
+    updatedAt: T.taskCollabCreated,
+  },
+];
+
+export const MOCK_ACTIVITY_EVENTS: ActivityEvent[] = [
+  {
+    id: MOCK_ACTIVITY_COLLAB,
+    projectId: MOCK_PROJECT_LAUNCH,
+    actorId: MOCK_USER_ALEX,
+    actorKind: 'agent',
+    action: 'session_claimed',
+    taskId: MOCK_TASK_COLLAB,
+    path: 'frontend/src/components/CollaborationView.tsx',
+    message: 'Agent claimed Collaboration overview',
+    createdAt: T.taskCollabCreated,
+  },
+  {
+    id: MOCK_ACTIVITY_PR,
+    projectId: MOCK_PROJECT_LAUNCH,
+    actorId: MOCK_USER_SAM,
+    actorKind: 'human',
+    action: 'task_created',
+    taskId: MOCK_TASK_PR_REVIEWS,
+    message: 'Created ticket: Add PR reviews option',
+    createdAt: T.taskPrCreated,
   },
 ];

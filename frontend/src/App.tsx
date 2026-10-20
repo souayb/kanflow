@@ -13,9 +13,20 @@ import KanbanView from './components/KanbanView';
 import ReportingView from './components/ReportingView';
 import PersonalTodoView from './components/PersonalTodoView';
 import TimeKeepingView from './components/TimeKeepingView';
+import CollaborationView from './components/CollaborationView';
+import ReviewsView from './components/ReviewsView';
+
+export type AppView =
+  | 'dashboard'
+  | 'kanban'
+  | 'collaboration'
+  | 'reviews'
+  | 'reporting'
+  | 'todos'
+  | 'time';
 
 function AppContent() {
-  const [currentView, setCurrentView] = React.useState<'dashboard' | 'kanban' | 'reporting' | 'todos' | 'time'>('kanban');
+  const [currentView, setCurrentView] = React.useState<AppView>('kanban');
   const { boardNavSeq } = useApp();
   const lastNavSeq = React.useRef(0);
 
@@ -30,6 +41,8 @@ function AppContent() {
     <Layout currentView={currentView} onViewChange={setCurrentView}>
       {currentView === 'dashboard' && <DashboardView />}
       {currentView === 'kanban' && <KanbanView />}
+      {currentView === 'collaboration' && <CollaborationView />}
+      {currentView === 'reviews' && <ReviewsView />}
       {currentView === 'reporting' && <ReportingView />}
       {currentView === 'todos' && <PersonalTodoView />}
       {currentView === 'time' && <TimeKeepingView />}

@@ -15,12 +15,16 @@ use uuid::Uuid;
 use crate::state::AppState;
 
 fn pg_unavailable() -> axum::response::Response {
-    (StatusCode::SERVICE_UNAVAILABLE, Json(json!({ "error": "postgres_disabled" }))).into_response()
+    (
+        StatusCode::SERVICE_UNAVAILABLE,
+        Json(json!({ "error": "postgres_disabled" })),
+    )
+        .into_response()
 }
 
 // ── Row types ─────────────────────────────────────────────────────────────────
 
-#[derive(FromRow)]
+#[derive(Clone, FromRow)]
 struct TaskRow {
     id: Uuid,
     project_id: Uuid,
@@ -31,6 +35,7 @@ struct TaskRow {
     assignee_id: Option<Uuid>,
     due_at: Option<DateTime<Utc>>,
     tags: Vec<String>,
+    position: f64,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
     github_issue_number: Option<i32>,
@@ -40,12 +45,18 @@ struct TaskRow {
     github_node_id: Option<String>,
     #[allow(dead_code)]
     github_project_item_id: Option<String>,
+    github_branch_name: Option<String>,
+    github_branch_url: Option<String>,
+    github_pr_number: Option<i32>,
+    github_pr_url: Option<String>,
+    github_pr_state: Option<String>,
 }
 
 /// Column list shared by every `SELECT`/`RETURNING` for a full task row.
 const TASK_COLS: &str = "id, project_id, column_id, title, description, priority, \
-    assignee_id, due_at, tags, created_at, updated_at, \
-    github_issue_number, github_issue_url, github_node_id, github_project_item_id";
+    assignee_id, due_at, tags, position, created_at, updated_at, \
+    github_issue_number, github_issue_url, github_node_id, github_project_item_id, \
+    github_branch_name, github_branch_url, github_pr_number, github_pr_url, github_pr_state";
 
 #[derive(FromRow)]
 struct CommentRow {
@@ -63,20 +74,18 @@ struct DepRow {
     depends_on_id: Uuid,
 }
 
-fn task_json(
-    t: &TaskRow,
-    comments: &[CommentRow],
-    deps: &[Uuid],
-) -> serde_json::Value {
+fn task_json(t: &TaskRow, comments: &[CommentRow], deps: &[Uuid]) -> serde_json::Value {
     let comments_v: Vec<_> = comments
         .iter()
-        .map(|c| json!({
-            "id": c.id,
-            "userId": c.user_id,
-            "userName": c.user_name,
-            "content": c.content,
-            "createdAt": c.created_at.timestamp_millis(),
-        }))
+        .map(|c| {
+            json!({
+                "id": c.id,
+                "userId": c.user_id,
+                "userName": c.user_name,
+                "content": c.content,
+                "createdAt": c.created_at.timestamp_millis(),
+            })
+        })
         .collect();
     let deps_v: Vec<_> = deps.iter().map(|d| json!(d)).collect();
     json!({
@@ -89,12 +98,18 @@ fn task_json(
         "assigneeId":  t.assignee_id,
         "dueDate":     t.due_at.map(|d| d.timestamp_millis()),
         "tags":        t.tags,
+        "position":    t.position,
         "comments":    comments_v,
         "dependencies": deps_v,
         "createdAt":   t.created_at.timestamp_millis(),
         "updatedAt":   t.updated_at.timestamp_millis(),
         "githubIssueNumber": t.github_issue_number,
         "githubIssueUrl":    t.github_issue_url,
+        "githubBranchName":  t.github_branch_name,
+        "githubBranchUrl":   t.github_branch_url,
+        "githubPrNumber":    t.github_pr_number,
+        "githubPrUrl":       t.github_pr_url,
+        "githubPrState":     t.github_pr_state,
     })
 }
 
@@ -104,18 +119,26 @@ pub async fn list_tasks(
     State(state): State<AppState>,
     Path(project_id): Path<Uuid>,
 ) -> impl IntoResponse {
-    let Some(pool) = &state.pg else { return pg_unavailable() };
+    let Some(pool) = &state.pg else {
+        return pg_unavailable();
+    };
 
-    let task_rows = sqlx::query_as::<_, TaskRow>(
-        &format!("SELECT {TASK_COLS} FROM tasks WHERE project_id = $1 ORDER BY created_at ASC"),
-    )
+    let task_rows = sqlx::query_as::<_, TaskRow>(&format!(
+        "SELECT {TASK_COLS} FROM tasks WHERE project_id = $1 ORDER BY position ASC, created_at ASC"
+    ))
     .bind(project_id)
     .fetch_all(pool)
     .await;
 
     let task_rows = match task_rows {
         Ok(r) => r,
-        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": e.to_string() })),
+            )
+                .into_response()
+        }
     };
 
     if task_rows.is_empty() {
@@ -183,27 +206,48 @@ pub struct CreateTaskBody {
     pub due_date: Option<i64>, // Unix ms
     #[serde(default)]
     pub tags: Vec<String>,
+    /// Manual sort position within the column. Omitted = append to the end.
+    pub position: Option<f64>,
 }
-fn default_priority() -> String { "medium".into() }
+fn default_priority() -> String {
+    "medium".into()
+}
 
 pub async fn create_task(
     State(state): State<AppState>,
     Path(project_id): Path<Uuid>,
     Json(body): Json<CreateTaskBody>,
 ) -> impl IntoResponse {
-    let Some(pool) = &state.pg else { return pg_unavailable() };
+    let Some(pool) = &state.pg else {
+        return pg_unavailable();
+    };
     let title = body.title.trim();
     if title.is_empty() {
-        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "title_required" }))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "title_required" })),
+        )
+            .into_response();
     }
-    let due_at: Option<DateTime<Utc>> = body
-        .due_date
-        .and_then(|ms| DateTime::from_timestamp_millis(ms));
+    let due_at: Option<DateTime<Utc>> = body.due_date.and_then(DateTime::from_timestamp_millis);
+
+    let position = match body.position {
+        Some(p) => p,
+        None => {
+            let max: Option<f64> =
+                sqlx::query_scalar("SELECT MAX(position) FROM tasks WHERE column_id = $1")
+                    .bind(body.status)
+                    .fetch_one(pool)
+                    .await
+                    .unwrap_or(None);
+            max.unwrap_or(0.0) + 1000.0
+        }
+    };
 
     let inserted = sqlx::query_as::<_, TaskRow>(
         &format!(
-            "INSERT INTO tasks (project_id, column_id, title, description, priority, assignee_id, due_at, tags)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            "INSERT INTO tasks (project_id, column_id, title, description, priority, assignee_id, due_at, tags, position)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
              RETURNING {TASK_COLS}"
         ),
     )
@@ -215,25 +259,36 @@ pub async fn create_task(
     .bind(body.assignee_id)
     .bind(due_at)
     .bind(&body.tags)
+    .bind(position)
     .fetch_one(pool)
     .await;
 
     let mut task = match inserted {
         Ok(t) => t,
-        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": e.to_string() })),
+            )
+                .into_response()
+        }
     };
 
     // ── Best-effort GitHub sync ────────────────────────────────────────────
     // Failures are logged, never fatal: the task already exists in Postgres.
-    if let Some(gh) = &state.github {
-        match sync_new_issue(gh, pool, &task).await {
+    if let Some(gh) = state.github_client() {
+        match sync_new_issue(&gh, pool, &task).await {
             Ok(Some(updated)) => task = updated,
             Ok(None) => {}
             Err(e) => tracing::warn!(task = %task.id, "GitHub issue sync failed: {e:#}"),
         }
     }
 
-    (StatusCode::CREATED, Json(json!({ "task": task_json(&task, &[], &[]) }))).into_response()
+    (
+        StatusCode::CREATED,
+        Json(json!({ "task": task_json(&task, &[], &[]) })),
+    )
+        .into_response()
 }
 
 /// Create a GitHub issue for a freshly-inserted task, add it to the Projects v2
@@ -255,13 +310,11 @@ async fn sync_new_issue(
         }
     };
 
-    let updated = sqlx::query_as::<_, TaskRow>(
-        &format!(
-            "UPDATE tasks SET github_issue_number=$1, github_issue_url=$2,
+    let updated = sqlx::query_as::<_, TaskRow>(&format!(
+        "UPDATE tasks SET github_issue_number=$1, github_issue_url=$2,
                               github_node_id=$3, github_project_item_id=$4
              WHERE id=$5 RETURNING {TASK_COLS}"
-        ),
-    )
+    ))
     .bind(issue.number as i32)
     .bind(&issue.html_url)
     .bind(&issue.node_id)
@@ -302,6 +355,8 @@ pub struct UpdateTaskBody {
     /// Unix ms; send `0` to clear (frontend convention).
     pub due_date: Option<i64>,
     pub tags: Option<Vec<String>>,
+    /// Manual sort position within the column. Omitted = unchanged.
+    pub position: Option<f64>,
 }
 
 pub async fn update_task(
@@ -309,21 +364,36 @@ pub async fn update_task(
     Path(task_id): Path<Uuid>,
     Json(body): Json<UpdateTaskBody>,
 ) -> impl IntoResponse {
-    let Some(pool) = &state.pg else { return pg_unavailable() };
-    let current = sqlx::query_as::<_, TaskRow>(
-        &format!("SELECT {TASK_COLS} FROM tasks WHERE id = $1"),
-    )
-    .bind(task_id)
-    .fetch_optional(pool)
-    .await;
+    let Some(pool) = &state.pg else {
+        return pg_unavailable();
+    };
+    let current =
+        sqlx::query_as::<_, TaskRow>(&format!("SELECT {TASK_COLS} FROM tasks WHERE id = $1"))
+            .bind(task_id)
+            .fetch_optional(pool)
+            .await;
 
     let current = match current {
         Ok(Some(t)) => t,
-        Ok(None) => return (StatusCode::NOT_FOUND, Json(json!({ "error": "not_found" }))).into_response(),
-        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
+        Ok(None) => {
+            return (StatusCode::NOT_FOUND, Json(json!({ "error": "not_found" }))).into_response()
+        }
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": e.to_string() })),
+            )
+                .into_response()
+        }
     };
 
-    let title = body.title.as_deref().map(str::trim).filter(|s| !s.is_empty()).unwrap_or(&current.title).to_string();
+    let title = body
+        .title
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(&current.title)
+        .to_string();
     let description = body.description.unwrap_or(current.description);
     let priority = body.priority.unwrap_or(current.priority);
     let column_id = body.status.unwrap_or(current.column_id);
@@ -337,14 +407,13 @@ pub async fn update_task(
         None => current.due_at,
     };
     let tags = body.tags.unwrap_or(current.tags);
+    let position = body.position.unwrap_or(current.position);
 
-    let updated = sqlx::query_as::<_, TaskRow>(
-        &format!(
-            "UPDATE tasks SET title=$1, description=$2, priority=$3, column_id=$4,
-                              assignee_id=$5, due_at=$6, tags=$7, updated_at=now()
-             WHERE id=$8 RETURNING {TASK_COLS}"
-        ),
-    )
+    let updated = sqlx::query_as::<_, TaskRow>(&format!(
+        "UPDATE tasks SET title=$1, description=$2, priority=$3, column_id=$4,
+                              assignee_id=$5, due_at=$6, tags=$7, position=$8, updated_at=now()
+             WHERE id=$9 RETURNING {TASK_COLS}"
+    ))
     .bind(&title)
     .bind(&description)
     .bind(&priority)
@@ -352,21 +421,35 @@ pub async fn update_task(
     .bind(assignee_id)
     .bind(due_at)
     .bind(&tags)
+    .bind(position)
     .bind(task_id)
     .fetch_one(pool)
     .await;
 
     let task = match updated {
         Ok(t) => t,
-        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": e.to_string() })),
+            )
+                .into_response()
+        }
     };
 
     // ── Best-effort GitHub sync of the linked issue (title/body/open-closed) ─
-    if let (Some(gh), Some(number)) = (&state.github, task.github_issue_number) {
+    if let (Some(gh), Some(number)) = (state.github_client(), task.github_issue_number) {
         let closed = column_is_done(pool, task.column_id).await;
-        let state_ = if closed { crate::github::IssueState::Closed } else { crate::github::IssueState::Open };
+        let state_ = if closed {
+            crate::github::IssueState::Closed
+        } else {
+            crate::github::IssueState::Open
+        };
         let body = issue_body(&task.description, &task.priority, &task.tags);
-        if let Err(e) = gh.update_issue(number as i64, &task.title, &body, state_).await {
+        if let Err(e) = gh
+            .update_issue(number as i64, &task.title, &body, state_)
+            .await
+        {
             tracing::warn!(task = %task.id, issue = number, "GitHub issue update failed: {e:#}");
         }
     }
@@ -386,17 +469,428 @@ async fn column_is_done(pool: &sqlx::PgPool, column_id: Uuid) -> bool {
         .unwrap_or(false)
 }
 
+// ── POST /api/v1/tasks/:task_id/github-branch ────────────────────────────────
+
+/// Create (or, if one already exists, just return) a GitHub branch for a task.
+/// Branch name: `task/<slug-of-title>-<first 8 chars of the task id>`, so it's
+/// readable and still unique without a second round trip to check for clashes.
+pub async fn create_task_branch(
+    State(state): State<AppState>,
+    Path(task_id): Path<Uuid>,
+) -> impl IntoResponse {
+    let Some(pool) = &state.pg else {
+        return pg_unavailable();
+    };
+    let Some(gh) = state.github_client() else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "github_not_connected" })),
+        )
+            .into_response();
+    };
+
+    let current =
+        sqlx::query_as::<_, TaskRow>(&format!("SELECT {TASK_COLS} FROM tasks WHERE id = $1"))
+            .bind(task_id)
+            .fetch_optional(pool)
+            .await;
+    let current = match current {
+        Ok(Some(t)) => t,
+        Ok(None) => {
+            return (StatusCode::NOT_FOUND, Json(json!({ "error": "not_found" }))).into_response()
+        }
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": e.to_string() })),
+            )
+                .into_response()
+        }
+    };
+
+    // Idempotent: a branch already recorded for this task is returned as-is
+    // rather than attempting (and failing) to create it again.
+    if current.github_branch_name.is_some() {
+        return Json(json!({ "task": task_json(&current, &[], &[]) })).into_response();
+    }
+
+    let branch_name = format!(
+        "task/{}-{}",
+        slugify(&current.title),
+        &task_id.to_string()[..8]
+    );
+    let branch = match gh.create_branch(&branch_name).await {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::warn!(task = %task_id, branch = %branch_name, "GitHub branch creation failed: {e:#}");
+            return (
+                StatusCode::BAD_GATEWAY,
+                Json(json!({ "error": "github_branch_failed", "detail": e.to_string() })),
+            )
+                .into_response();
+        }
+    };
+
+    let updated = sqlx::query_as::<_, TaskRow>(
+        &format!("UPDATE tasks SET github_branch_name=$1, github_branch_url=$2 WHERE id=$3 RETURNING {TASK_COLS}"),
+    )
+    .bind(&branch.name)
+    .bind(&branch.html_url)
+    .bind(task_id)
+    .fetch_one(pool)
+    .await;
+
+    match updated {
+        Ok(t) => Json(json!({ "task": task_json(&t, &[], &[]) })).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+/// Lowercase, alphanumeric-and-hyphens, collapsed and trimmed — good enough for a
+/// git branch segment. Truncated so the full branch name stays a reasonable length.
+fn slugify(title: &str) -> String {
+    let mut slug = String::new();
+    let mut last_was_hyphen = true; // swallow a leading hyphen
+    for c in title.to_lowercase().chars() {
+        if c.is_ascii_alphanumeric() {
+            slug.push(c);
+            last_was_hyphen = false;
+        } else if !last_was_hyphen {
+            slug.push('-');
+            last_was_hyphen = true;
+        }
+    }
+    if slug.ends_with('-') {
+        slug.pop();
+    }
+    slug.chars().take(40).collect()
+}
+
+/// Find a column in the task's project whose title matches (case-insensitive).
+async fn find_column_by_title(pool: &sqlx::PgPool, project_id: Uuid, title: &str) -> Option<Uuid> {
+    sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM columns WHERE project_id = $1 AND LOWER(TRIM(title)) = LOWER(TRIM($2)) LIMIT 1",
+    )
+    .bind(project_id)
+    .bind(title)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten()
+}
+
+async fn persist_pr_on_task(
+    pool: &sqlx::PgPool,
+    task_id: Uuid,
+    number: i64,
+    url: &str,
+    state: &str,
+) -> Result<TaskRow, sqlx::Error> {
+    sqlx::query_as::<_, TaskRow>(&format!(
+        "UPDATE tasks SET github_pr_number=$1, github_pr_url=$2, github_pr_state=$3, updated_at=NOW()
+         WHERE id=$4 RETURNING {TASK_COLS}"
+    ))
+    .bind(number as i32)
+    .bind(url)
+    .bind(state)
+    .bind(task_id)
+    .fetch_one(pool)
+    .await
+}
+
+async fn maybe_move_for_pr_state(pool: &sqlx::PgPool, task: &TaskRow, pr_state: &str) -> TaskRow {
+    let target_title = match pr_state {
+        "open" | "draft" | "approved" | "changes" => Some("Review"),
+        "merged" => Some("Done"),
+        _ => None,
+    };
+    let Some(title) = target_title else {
+        return task.clone();
+    };
+    let Some(col) = find_column_by_title(pool, task.project_id, title).await else {
+        return task.clone();
+    };
+    if task.column_id == col {
+        return task.clone();
+    }
+    match sqlx::query_as::<_, TaskRow>(&format!(
+        "UPDATE tasks SET column_id=$1, updated_at=NOW() WHERE id=$2 RETURNING {TASK_COLS}"
+    ))
+    .bind(col)
+    .bind(task.id)
+    .fetch_one(pool)
+    .await
+    {
+        Ok(t) => t,
+        Err(_) => task.clone(),
+    }
+}
+
+// ── POST /api/v1/tasks/:task_id/github-pr ────────────────────────────────────
+
+pub async fn create_task_pr(
+    State(state): State<AppState>,
+    Path(task_id): Path<Uuid>,
+) -> impl IntoResponse {
+    let Some(pool) = &state.pg else {
+        return pg_unavailable();
+    };
+    let Some(gh) = state.github_client() else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "github_not_connected" })),
+        )
+            .into_response();
+    };
+
+    let current =
+        sqlx::query_as::<_, TaskRow>(&format!("SELECT {TASK_COLS} FROM tasks WHERE id = $1"))
+            .bind(task_id)
+            .fetch_optional(pool)
+            .await;
+    let current = match current {
+        Ok(Some(t)) => t,
+        Ok(None) => {
+            return (StatusCode::NOT_FOUND, Json(json!({ "error": "not_found" }))).into_response()
+        }
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": e.to_string() })),
+            )
+                .into_response()
+        }
+    };
+
+    if current.github_pr_number.is_some() {
+        return Json(json!({ "task": task_json(&current, &[], &[]) })).into_response();
+    }
+    let Some(branch) = current.github_branch_name.as_deref() else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "github_branch_required" })),
+        )
+            .into_response();
+    };
+
+    let body = if current.description.is_empty() {
+        format!("Kanflow task {}", current.id)
+    } else {
+        current.description.clone()
+    };
+    let pr = match gh.create_pull_request(&current.title, &body, branch).await {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::warn!(task = %task_id, "GitHub PR creation failed: {e:#}");
+            return (
+                StatusCode::BAD_GATEWAY,
+                Json(json!({ "error": "github_pr_failed", "detail": e.to_string() })),
+            )
+                .into_response();
+        }
+    };
+
+    let updated =
+        match persist_pr_on_task(pool, task_id, pr.number, &pr.html_url, pr.state.as_str()).await {
+            Ok(t) => t,
+            Err(e) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({ "error": e.to_string() })),
+                )
+                    .into_response();
+            }
+        };
+    let moved = maybe_move_for_pr_state(pool, &updated, pr.state.as_str()).await;
+    let actor = moved.assignee_id.unwrap_or(Uuid::nil());
+    crate::handlers::collaboration::insert_activity(
+        pool,
+        moved.project_id,
+        actor,
+        "human",
+        "pr_opened",
+        Some(moved.id),
+        None,
+        &format!("Opened PR #{}", pr.number),
+    )
+    .await;
+
+    Json(json!({ "task": task_json(&moved, &[], &[]) })).into_response()
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LinkPrBody {
+    pub number: i64,
+}
+
+// ── POST /api/v1/tasks/:task_id/github-pr/link ───────────────────────────────
+
+pub async fn link_task_pr(
+    State(state): State<AppState>,
+    Path(task_id): Path<Uuid>,
+    Json(body): Json<LinkPrBody>,
+) -> impl IntoResponse {
+    let Some(pool) = &state.pg else {
+        return pg_unavailable();
+    };
+    let Some(gh) = state.github_client() else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "github_not_connected" })),
+        )
+            .into_response();
+    };
+    if body.number <= 0 {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "invalid_pr_number" })),
+        )
+            .into_response();
+    }
+
+    let exists = sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM tasks WHERE id = $1)")
+        .bind(task_id)
+        .fetch_one(pool)
+        .await;
+    match exists {
+        Ok(true) => {}
+        Ok(false) => {
+            return (StatusCode::NOT_FOUND, Json(json!({ "error": "not_found" }))).into_response()
+        }
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": e.to_string() })),
+            )
+                .into_response()
+        }
+    }
+
+    let pr = match gh.get_pull_request(body.number).await {
+        Ok(p) => p,
+        Err(e) => {
+            return (
+                StatusCode::BAD_GATEWAY,
+                Json(json!({ "error": "github_pr_failed", "detail": e.to_string() })),
+            )
+                .into_response();
+        }
+    };
+
+    let updated =
+        match persist_pr_on_task(pool, task_id, pr.number, &pr.html_url, pr.state.as_str()).await {
+            Ok(t) => t,
+            Err(e) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({ "error": e.to_string() })),
+                )
+                    .into_response();
+            }
+        };
+    let moved = maybe_move_for_pr_state(pool, &updated, pr.state.as_str()).await;
+    Json(json!({ "task": task_json(&moved, &[], &[]) })).into_response()
+}
+
+// ── POST /api/v1/tasks/:task_id/github-pr/refresh ────────────────────────────
+
+pub async fn refresh_task_pr(
+    State(state): State<AppState>,
+    Path(task_id): Path<Uuid>,
+) -> impl IntoResponse {
+    let Some(pool) = &state.pg else {
+        return pg_unavailable();
+    };
+    let Some(gh) = state.github_client() else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "github_not_connected" })),
+        )
+            .into_response();
+    };
+
+    let current =
+        sqlx::query_as::<_, TaskRow>(&format!("SELECT {TASK_COLS} FROM tasks WHERE id = $1"))
+            .bind(task_id)
+            .fetch_optional(pool)
+            .await;
+    let current = match current {
+        Ok(Some(t)) => t,
+        Ok(None) => {
+            return (StatusCode::NOT_FOUND, Json(json!({ "error": "not_found" }))).into_response()
+        }
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": e.to_string() })),
+            )
+                .into_response()
+        }
+    };
+    let Some(number) = current.github_pr_number else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "github_pr_required" })),
+        )
+            .into_response();
+    };
+
+    let pr = match gh.get_pull_request(number as i64).await {
+        Ok(p) => p,
+        Err(e) => {
+            return (
+                StatusCode::BAD_GATEWAY,
+                Json(json!({ "error": "github_pr_failed", "detail": e.to_string() })),
+            )
+                .into_response();
+        }
+    };
+
+    let updated =
+        match persist_pr_on_task(pool, task_id, pr.number, &pr.html_url, pr.state.as_str()).await {
+            Ok(t) => t,
+            Err(e) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({ "error": e.to_string() })),
+                )
+                    .into_response();
+            }
+        };
+    let moved = maybe_move_for_pr_state(pool, &updated, pr.state.as_str()).await;
+    let actor = moved.assignee_id.unwrap_or(Uuid::nil());
+    crate::handlers::collaboration::insert_activity(
+        pool,
+        moved.project_id,
+        actor,
+        "human",
+        "pr_updated",
+        Some(moved.id),
+        None,
+        &format!("PR #{} → {}", pr.number, pr.state.as_str()),
+    )
+    .await;
+    Json(json!({ "task": task_json(&moved, &[], &[]) })).into_response()
+}
+
 // ── DELETE /api/v1/tasks/:task_id ────────────────────────────────────────────
 
 pub async fn delete_task(
     State(state): State<AppState>,
     Path(task_id): Path<Uuid>,
 ) -> impl IntoResponse {
-    let Some(pool) = &state.pg else { return pg_unavailable() };
+    let Some(pool) = &state.pg else {
+        return pg_unavailable();
+    };
 
     // Close the linked GitHub issue first (best-effort) — after the row is gone
     // we'd lose the issue number.
-    if let Some(gh) = &state.github {
+    if let Some(gh) = state.github_client() {
         if let Ok(Some(number)) = sqlx::query_scalar::<_, Option<i32>>(
             "SELECT github_issue_number FROM tasks WHERE id = $1",
         )
@@ -420,7 +914,11 @@ pub async fn delete_task(
             (StatusCode::NOT_FOUND, Json(json!({ "error": "not_found" }))).into_response()
         }
         Ok(_) => StatusCode::NO_CONTENT.into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        )
+            .into_response(),
     }
 }
 
@@ -438,10 +936,16 @@ pub async fn create_comment(
     Path(task_id): Path<Uuid>,
     Json(body): Json<CreateCommentBody>,
 ) -> impl IntoResponse {
-    let Some(pool) = &state.pg else { return pg_unavailable() };
+    let Some(pool) = &state.pg else {
+        return pg_unavailable();
+    };
     let content = body.content.trim();
     if content.is_empty() {
-        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "content_required" }))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "content_required" })),
+        )
+            .into_response();
     }
     match sqlx::query_as::<_, CommentRow>(
         "INSERT INTO comments (task_id, user_id, user_name, content)
@@ -455,15 +959,23 @@ pub async fn create_comment(
     .fetch_one(pool)
     .await
     {
-        Ok(c) => (StatusCode::CREATED, Json(json!({
-            "comment": {
-                "id": c.id,
-                "userId": c.user_id,
-                "userName": c.user_name,
-                "content": c.content,
-                "createdAt": c.created_at.timestamp_millis(),
-            }
-        }))).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
+        Ok(c) => (
+            StatusCode::CREATED,
+            Json(json!({
+                "comment": {
+                    "id": c.id,
+                    "userId": c.user_id,
+                    "userName": c.user_name,
+                    "content": c.content,
+                    "createdAt": c.created_at.timestamp_millis(),
+                }
+            })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        )
+            .into_response(),
     }
 }

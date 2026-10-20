@@ -138,7 +138,7 @@ function buildThroughputSeries(projectTasks: Task[], doneColumnId: string | null
 }
 
 export default function DashboardView() {
-  const { tasks, projects, activeProjectId, dashboardWidgets, dashboardChartDays, setDashboardChartDays } = useApp();
+  const { tasks, projects, activeProjectId, dashboardWidgets, dashboardChartDays, setDashboardChartDays, activityEvents, users } = useApp();
   const [isCustomizing, setIsCustomizing] = useState(false);
 
   const activeProject = projects.find((p) => p.id === activeProjectId);
@@ -413,23 +413,36 @@ export default function DashboardView() {
                     Recent activity
                   </h3>
                   <div className="space-y-4">
-                    {[1, 2, 3].map((i) => (
-                      <div key={i} className="flex gap-3">
-                        <div className="relative shrink-0">
-                          <Avatar
-                            name={['Alex Rivera', 'Sam Chen', 'Jordan Taylor'][i - 1] ?? `User ${i}`}
-                            className="w-9 h-9 text-xs border border-kf-divider-gray"
-                          />
-                          {i === 1 && (
-                            <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-kf-success rounded-full border-2 border-kf-white" />
-                          )}
-                        </div>
-                        <div className="min-w-0">
-                          <div className="text-sm font-medium text-kf-charcoal">Teammate updated a task</div>
-                          <div className="text-xs text-kf-slate mt-0.5">{i * 15} min ago</div>
-                        </div>
-                      </div>
-                    ))}
+                    {activityEvents
+                      .filter((e) => e.projectId === activeProjectId)
+                      .slice(0, 6)
+                      .map((e) => {
+                        const actor = users.find((u) => u.id === e.actorId);
+                        const mins = Math.max(1, Math.round((Date.now() - e.createdAt) / 60000));
+                        return (
+                          <div key={e.id} className="flex gap-3">
+                            <div className="relative shrink-0">
+                              <Avatar
+                                name={actor?.name ?? 'Someone'}
+                                className="w-9 h-9 text-xs border border-kf-divider-gray"
+                              />
+                              {e.actorKind === 'agent' && (
+                                <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-kf-meta-blue rounded-full border-2 border-kf-white" />
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="text-sm font-medium text-kf-charcoal truncate">{e.message}</div>
+                              <div className="text-xs text-kf-slate mt-0.5">
+                                {mins < 60 ? `${mins} min ago` : `${Math.round(mins / 60)} h ago`}
+                                {e.path ? ` · ${e.path.split('/').pop()}` : ''}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    {activityEvents.filter((e) => e.projectId === activeProjectId).length === 0 && (
+                      <p className="text-sm text-kf-slate">No recent activity for this project.</p>
+                    )}
                   </div>
                 </motion.div>
               )}

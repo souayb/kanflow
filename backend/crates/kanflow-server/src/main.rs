@@ -2,7 +2,7 @@
 
 use anyhow::Context;
 use kanflow_server::auth::{fetch_and_cache_jwks, AuthConfig};
-use kanflow_server::config::ServerConfig;
+use kanflow_server::config::{GithubConfig, ServerConfig};
 use kanflow_server::github::GithubClient;
 use kanflow_server::router;
 use kanflow_server::state::AppState;
@@ -14,7 +14,9 @@ use tracing_subscriber::EnvFilter;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env().add_directive("kanflow_server=info".parse()?))
+        .with_env_filter(
+            EnvFilter::from_default_env().add_directive("kanflow_server=info".parse()?),
+        )
         .init();
 
     let cfg = ServerConfig::from_env();
@@ -56,12 +58,36 @@ async fn main() -> anyhow::Result<()> {
         }
         Some(ac)
     } else {
-        tracing::warn!("KEYCLOAK_URL / KEYCLOAK_REALM not set — auth disabled (all requests permitted)");
+        tracing::warn!(
+            "KEYCLOAK_URL / KEYCLOAK_REALM not set — auth disabled (all requests permitted)"
+        );
         None
     };
 
-    // ── GitHub one-way sync (optional) ─────────────────────────────────────
-    let github = match cfg.github.clone() {
+    // ── GitHub integration (optional) ──────────────────────────────────────
+    // An in-app connection takes precedence; environment settings remain the
+    // bootstrap/fallback for deployments managed entirely through secrets.
+    let stored_github = if let Some(pool) = &pg {
+        sqlx::query_as::<_, (String, String, String, Option<i64>, bool)>(
+            "SELECT access_token, owner, repo, project_number, owner_is_org \
+             FROM github_integration WHERE id = 1",
+        )
+        .fetch_optional(pool)
+        .await
+        .context("load GitHub integration")?
+        .map(
+            |(token, owner, repo, project_number, owner_is_org)| GithubConfig {
+                token,
+                owner,
+                repo,
+                project_number,
+                owner_is_org,
+            },
+        )
+    } else {
+        None
+    };
+    let github = match stored_github.or_else(|| cfg.github.clone()) {
         Some(gh) => {
             let client = GithubClient::new(gh);
             tracing::info!(repo = %client.slug(), "GitHub sync enabled");
@@ -73,7 +99,9 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
-    let state = AppState::new(pg, mongo, auth).with_github(github);
+    let state = AppState::new(pg, mongo, auth)
+        .with_github(github)
+        .with_github_app(cfg.github_app.clone());
     let app = router(state);
 
     let addr = format!("{}:{}", cfg.host, cfg.port);
