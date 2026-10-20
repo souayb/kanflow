@@ -28,7 +28,7 @@ export default function InviteTeamModal({ open, onClose, projectId }: InviteTeam
         role="dialog"
         aria-modal="true"
         aria-labelledby="invite-team-title"
-        className="w-full max-w-md bg-kf-white rounded-[24px] border border-kf-divider-gray shadow-2xl p-6 space-y-4"
+        className="w-full max-w-md bg-kf-carbon rounded-xl border border-kf-divider-gray shadow-2xl p-6 space-y-4"
       >
         <div className="flex items-center justify-between gap-2">
           <h2 id="invite-team-title" className="text-lg font-medium text-kf-charcoal flex items-center gap-2">

@@ -41,7 +41,7 @@ export default function DashboardCustomizer({ isOpen, onClose }: DashboardCustom
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 48 }}
             transition={{ type: 'spring', damping: 28, stiffness: 320 }}
-            className="fixed top-0 right-0 h-full w-full max-w-md bg-kf-white border-l border-kf-divider-gray shadow-2xl z-[70] flex flex-col"
+            className="fixed top-0 right-0 h-full w-full max-w-md bg-kf-carbon border-l border-kf-divider-gray shadow-2xl z-[70] flex flex-col"
           >
             <div className="p-6 border-b border-kf-divider-gray flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -65,9 +65,9 @@ export default function DashboardCustomizer({ isOpen, onClose }: DashboardCustom
                     <div
                       key={widget.id}
                       className={cn(
-                        'p-4 rounded-[16px] border flex items-center gap-4 transition-colors',
+                        'p-4 rounded-xl border flex items-center gap-4 transition-colors',
                         widget.enabled
-                          ? 'bg-kf-white border-kf-divider-gray hover:border-kf-meta-blue/25'
+                          ? 'bg-kf-carbon border-kf-divider-gray hover:border-kf-meta-blue/25'
                           : 'bg-kf-soft-gray/80 border-kf-divider-gray/60 opacity-60',
                       )}
                     >
@@ -100,7 +100,7 @@ export default function DashboardCustomizer({ isOpen, onClose }: DashboardCustom
                         type="button"
                         onClick={() => toggleWidget(widget.id)}
                         className={cn(
-                          'p-2 rounded-[10px] transition-colors',
+                          'p-2 rounded-md transition-colors',
                           widget.enabled
                             ? 'bg-kf-baby-blue text-kf-meta-blue hover:bg-kf-meta-blue/10'
                             : 'bg-kf-warm-gray text-kf-slate hover:bg-kf-divider-gray/50',
@@ -113,7 +113,7 @@ export default function DashboardCustomizer({ isOpen, onClose }: DashboardCustom
                 </div>
               </div>
 
-              <div className="p-5 rounded-[16px] bg-kf-baby-blue/60 border border-kf-meta-blue/15">
+              <div className="p-5 rounded-xl bg-kf-baby-blue/60 border border-kf-meta-blue/15">
                 <div className="flex items-center gap-2 mb-2">
                   <Plus size={14} className="text-kf-meta-blue" />
                   <h4 className="text-xs font-semibold text-kf-meta-blue tracking-wide">More widgets</h4>

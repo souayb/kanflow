@@ -384,6 +384,15 @@ OverlapFinding { kind: 'file_overlap' | 'issue_collision' | 'shared_branch', ses
 
 ---
 
+### 5.15 Coding agent (T3 + optional in-app terminal)
+
+* **T3 Code** is the default coding-agent surface. Kanflow opens T3 (`https://app.t3.codes` or a saved pairing URL); it does **not** vendor [T3](https://github.com/pingdotgg/t3code) or run agent CLIs inside Docker.
+* The Warp-inspired in-app terminal remains an **optional** local shell: block-based command history and streamed output. Kanflow does **not** vendor Warp (AGPL); study fork: `https://github.com/souayb/warp`.
+* Optional shell API: authenticated `GET /api/v1/terminal/ws`. Frames: `ready`, `input`, `started`, `output`, `exit`. Working directory: `KANFLOW_TERMINAL_CWD`.
+* UI: **Coding agent** — T3 launcher by default, in-app terminal behind a toggle. T3 URL and surface choice persist in localStorage.
+
+---
+
 ## 6. State Management
 
 ### Client State Shape (AppContext)

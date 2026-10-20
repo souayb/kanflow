@@ -3,7 +3,7 @@
  * Validates: Add task button flow, Cancel button, Enter key submission, empty-title guard.
  */
 import React from 'react';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, cleanup } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppProvider } from '../AppContext';
 import KanbanView from './KanbanView';
@@ -75,13 +75,15 @@ describe('KanbanView buttons', () => {
   });
 
   afterEach(() => {
+    cleanup();
     vi.unstubAllGlobals();
   });
 
-  it('renders the board header with active project name', async () => {
+  it('renders the board toolbar without a project hero', async () => {
     await renderKanban();
-    // Project name is in an h2
-    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Kanflow product launch');
+    expect(screen.queryByText('Active project')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { level: 2, name: /Kanflow product launch/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Filter/i })).toBeInTheDocument();
   });
 
   it('renders all 4 column headers from the active project', async () => {
@@ -165,5 +167,23 @@ describe('KanbanView buttons', () => {
     await act(async () => { fireEvent.click(confirmBtn ?? confirmBtns[0]); });
 
     expect(screen.getByPlaceholderText('Task title…')).toBeInTheDocument();
+  });
+
+  it('Filter opens the board filters panel', async () => {
+    await renderKanban();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^Filter$/i }));
+    });
+    expect(screen.getByRole('region', { name: 'Board filters' })).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/Title, description, tags/i)).toBeInTheDocument();
+  });
+
+  it('clicking a task card opens the task editor', async () => {
+    await renderKanban();
+    await act(async () => {
+      fireEvent.click(screen.getByText('Implement Dark Mode'));
+    });
+    expect(screen.getByDisplayValue('Implement Dark Mode')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /AI refine/i })).toBeInTheDocument();
   });
 });

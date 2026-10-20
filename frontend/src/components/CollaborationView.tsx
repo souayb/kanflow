@@ -105,7 +105,7 @@ export default function CollaborationView() {
       for (const p of o.paths) conflictFolders.add(folderOf(p));
     }
     const ownerColors = new Map<string, string>();
-    const palette = ['#E8F3FF', '#E8F8EF', '#F3E8FF', '#FFF3E0', '#FCE4EC'];
+    const palette = ['rgba(0,100,224,0.22)', 'rgba(39,166,68,0.20)', 'rgba(139,92,246,0.22)', 'rgba(247,185,40,0.18)', 'rgba(235,87,87,0.18)'];
     let i = 0;
     for (const [ownerId] of grouped) {
       ownerColors.set(ownerId, palette[i % palette.length]!);
@@ -127,7 +127,7 @@ export default function CollaborationView() {
         topOwner,
         total,
         conflict: conflictFolders.has(folder),
-        color: ownerColors.get(topOwner) ?? '#F1F4F7',
+        color: ownerColors.get(topOwner) ?? '#161718',
         owners: [...owners.entries()],
       };
     });
@@ -167,7 +167,7 @@ export default function CollaborationView() {
     <div className="h-full overflow-y-auto p-6 md:p-10">
       <div className="flex flex-wrap items-end justify-between gap-4 mb-8">
         <div>
-          <h1 className="text-2xl font-medium tracking-tight text-kf-charcoal">Collaboration</h1>
+          <h1 className="text-2xl font-medium tracking-[-0.022em] text-kf-paper">Collaboration</h1>
           <p className="text-kf-slate text-sm mt-2">
             Who is working on what — humans and agents, with file-level overlap warnings.
           </p>

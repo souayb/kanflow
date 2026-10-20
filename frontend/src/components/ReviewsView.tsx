@@ -77,7 +77,7 @@ export default function ReviewsView() {
   return (
     <div className="h-full overflow-y-auto p-6 md:p-10">
       <div className="mb-8">
-        <h1 className="text-2xl font-medium tracking-tight text-kf-charcoal flex items-center gap-3">
+        <h1 className="text-2xl font-medium tracking-[-0.022em] text-kf-paper flex items-center gap-3">
           <GitPullRequest className="text-kf-meta-blue" strokeWidth={1.75} />
           Reviews
         </h1>

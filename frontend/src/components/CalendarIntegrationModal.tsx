@@ -22,7 +22,7 @@ export default function CalendarIntegrationModal({ onClose }: { onClose: () => v
 
   return (
     <div className="fixed inset-0 z-[80] bg-black/40 flex items-center justify-center p-4">
-      <div className="kf-card-elevated rounded-[20px] w-full max-w-md p-6">
+      <div className="kf-card-elevated rounded-xl w-full max-w-md p-6">
         <div className="flex items-start justify-between gap-4 mb-5">
           <div className="flex gap-3">
             <div className="p-2.5 rounded-xl bg-kf-baby-blue text-kf-meta-blue">

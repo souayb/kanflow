@@ -60,12 +60,12 @@ function kcUserFromToken(): User | null {
 
 function LoadingScreen({ message }: { message: string }) {
   return (
-    <div className="flex h-screen items-center justify-center bg-[#F5F5F0]">
+    <div className="flex h-screen items-center justify-center bg-kf-void">
       <div className="text-center">
-        <div className="w-14 h-14 rounded-[16px] bg-[#0064E0] flex items-center justify-center mx-auto mb-5 animate-pulse shadow-lg">
-          <Kanban className="w-7 h-7 text-white" strokeWidth={2} />
+        <div className="w-14 h-14 rounded-xl bg-kf-meta-blue flex items-center justify-center mx-auto mb-5">
+          <Kanban className="w-7 h-7 text-kf-paper" strokeWidth={2} />
         </div>
-        <p className="text-[#5D6C7B] text-sm font-medium">{message}</p>
+        <p className="text-kf-fog text-sm font-medium tracking-[-0.011em]">{message}</p>
       </div>
     </div>
   );

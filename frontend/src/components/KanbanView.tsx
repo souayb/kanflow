@@ -323,20 +323,35 @@ export default function KanbanView() {
   };
 
   return (
-    <div className="h-full flex flex-col gap-6 md:gap-8 overflow-hidden">
-      <div className="kf-section-dark rounded-[24px] px-6 py-8 md:px-10 md:py-10 shadow-inner relative">
-        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-6">
-          <div>
-            <p className="text-sm text-kf-slate font-normal mb-2">Active project</p>
-            <h2 className="text-2xl md:text-4xl font-medium tracking-tight text-kf-white">{activeProject.name}</h2>
-            <p className="text-kf-slate mt-2 max-w-xl text-sm md:text-base leading-relaxed">{activeProject.description}</p>
-            {hasFilters && (
-              <p className="text-xs text-kf-white/70 mt-3 font-medium">
-                Showing {filteredTasks.length} of {projectTasks.length} tasks in this project
-              </p>
+    <div className="h-full flex flex-col gap-4 overflow-hidden">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="flex -space-x-2">
+            {teamMembers.map((u) => (
+              <Avatar
+                key={u.id}
+                name={u.name}
+                className="w-8 h-8 text-[10px] border-2 border-kf-void"
+              />
+            ))}
+            {teamMembers.length === 0 && (
+              <span className="text-xs text-kf-fog">No teammates yet</span>
             )}
           </div>
-          <div className="flex flex-wrap items-start justify-end gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => setInviteOpen(true)}
+            className="text-sm font-medium text-kf-link hover:text-kf-paper min-h-[40px]"
+          >
+            Invite teammates
+          </button>
+          {hasFilters && (
+            <p className="text-xs text-kf-fog">
+              {filteredTasks.length} of {projectTasks.length}
+            </p>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center justify-end gap-2 shrink-0">
             <div className="relative" ref={filterWrapRef}>
               <button
                 type="button"
@@ -347,8 +362,8 @@ export default function KanbanView() {
                   setFilterOpen((o) => !o);
                 }}
                 className={cn(
-                  'kf-btn-secondary !text-kf-white/90 !border-white/20 hover:!bg-white/10 gap-2',
-                  hasFilters && '!border-kf-meta-blue-light/60 !bg-white/10',
+                  'kf-btn-secondary gap-2',
+                  hasFilters && 'border-kf-meta-blue/50 bg-kf-baby-blue text-kf-paper',
                 )}
               >
                 <Filter size={16} />
@@ -363,7 +378,7 @@ export default function KanbanView() {
                 <div
                   role="region"
                   aria-label="Board filters"
-                  className="absolute right-0 z-40 mt-2 w-[min(100vw-2rem,22rem)] rounded-2xl border border-kf-divider-gray bg-kf-white shadow-2xl p-4 text-kf-charcoal"
+                  className="absolute right-0 z-40 mt-2 w-[min(100vw-2rem,22rem)] rounded-xl border border-kf-divider-gray bg-kf-carbon p-4 text-kf-charcoal"
                 >
                   <div className="flex items-center justify-between mb-3">
                     <span className="text-xs font-semibold uppercase tracking-wider text-kf-slate">Filters</span>
@@ -500,7 +515,7 @@ export default function KanbanView() {
                   setFilterOpen(false);
                   setViewOpen((o) => !o);
                 }}
-                className="kf-btn-primary !bg-kf-meta-blue-light !text-kf-near-black hover:!bg-kf-white gap-2"
+                className="kf-btn-secondary gap-2"
               >
                 <LayoutGrid size={16} />
                 View
@@ -510,7 +525,7 @@ export default function KanbanView() {
                 <div
                   role="region"
                   aria-label="Board view options"
-                  className="absolute right-0 z-40 mt-2 w-[min(100vw-2rem,20rem)] rounded-2xl border border-kf-divider-gray bg-kf-white shadow-2xl p-4 text-kf-charcoal"
+                  className="absolute right-0 z-40 mt-2 w-[min(100vw-2rem,20rem)] rounded-xl border border-kf-divider-gray bg-kf-carbon p-4 text-kf-charcoal"
                 >
                   <div className="flex items-center justify-between mb-3">
                     <span className="text-xs font-semibold uppercase tracking-wider text-kf-slate">View</span>
@@ -532,7 +547,7 @@ export default function KanbanView() {
                       className={cn(
                         'flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-colors',
                         viewOptions.cardDensity === 'comfortable'
-                          ? 'bg-kf-white text-kf-charcoal shadow-sm'
+                          ? 'bg-kf-carbon text-kf-charcoal shadow-sm'
                           : 'text-kf-slate hover:text-kf-charcoal',
                       )}
                     >
@@ -545,7 +560,7 @@ export default function KanbanView() {
                       className={cn(
                         'flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-colors',
                         viewOptions.cardDensity === 'compact'
-                          ? 'bg-kf-white text-kf-charcoal shadow-sm'
+                          ? 'bg-kf-carbon text-kf-charcoal shadow-sm'
                           : 'text-kf-slate hover:text-kf-charcoal',
                       )}
                     >
@@ -622,31 +637,6 @@ export default function KanbanView() {
                 </div>
               )}
             </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="flex -space-x-2">
-            {teamMembers.map((u) => (
-              <Avatar
-                key={u.id}
-                name={u.name}
-                className="w-9 h-9 text-xs border-2 border-kf-white shadow-sm"
-              />
-            ))}
-            {teamMembers.length === 0 && (
-              <span className="text-xs text-kf-slate px-2">No teammates yet</span>
-            )}
-          </div>
-          <button
-            type="button"
-            onClick={() => setInviteOpen(true)}
-            className="text-sm font-medium text-kf-meta-blue hover:text-kf-meta-blue-hover px-2 min-h-[44px]"
-          >
-            Invite teammates
-          </button>
         </div>
       </div>
 
@@ -722,7 +712,7 @@ export default function KanbanView() {
                   <button
                     type="button"
                     onClick={() => setIsAddingTask(column.id)}
-                    className="w-full py-3 min-h-[44px] flex items-center justify-center gap-2 text-sm font-medium text-kf-slate hover:bg-kf-white hover:text-kf-charcoal rounded-[20px] border border-dashed border-kf-divider-gray transition-all group/addbtn bg-kf-white/60"
+                    className="w-full py-3 min-h-[44px] flex items-center justify-center gap-2 text-sm font-medium text-kf-slate hover:bg-kf-carbon hover:text-kf-charcoal rounded-xl border border-dashed border-kf-divider-gray transition-all group/addbtn bg-kf-carbon/60"
                   >
                     <Plus size={18} className="group-hover/addbtn:scale-110 transition-transform" />
                     Add task
@@ -737,7 +727,7 @@ export default function KanbanView() {
           type="button"
           className={cn(
             COLUMN_WIDTH[viewOptions.columnWidth],
-            'flex-shrink-0 min-h-[100px] flex items-center justify-center gap-2 text-sm font-medium text-kf-slate hover:bg-kf-white hover:border-kf-divider rounded-[20px] border border-dashed border-kf-divider-gray transition-all bg-kf-white/40',
+            'flex-shrink-0 min-h-[100px] flex items-center justify-center gap-2 text-sm font-medium text-kf-slate hover:bg-kf-carbon hover:border-kf-divider rounded-xl border border-dashed border-kf-divider-gray transition-all bg-kf-carbon/40',
           )}
         >
           <Plus size={18} />
@@ -794,7 +784,7 @@ function TaskCard({
       )}
     >
       {isBlocked && (
-        <div className="absolute inset-0 bg-kf-white/70 flex items-center justify-center pointer-events-none group-hover:bg-kf-white/50 transition-all">
+        <div className="absolute inset-0 bg-kf-carbon/70 flex items-center justify-center pointer-events-none group-hover:bg-kf-carbon/50 transition-all">
           <div className="bg-[rgba(255,123,145,0.15)] border border-kf-error/30 px-3 py-1.5 rounded-full flex items-center gap-2">
             <LinkIcon size={12} className="text-kf-error" />
             <span className="text-[10px] font-semibold uppercase tracking-wide text-kf-error">Blocked</span>

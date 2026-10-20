@@ -85,7 +85,7 @@ export default function GithubIntegrationModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="github-integration-title"
-        className="w-full max-w-lg bg-kf-white rounded-[24px] border border-kf-divider-gray shadow-2xl p-6"
+        className="w-full max-w-lg bg-kf-carbon rounded-xl border border-kf-divider-gray shadow-2xl p-6"
       >
         <div className="flex items-start justify-between gap-4 mb-5">
           <div>
@@ -103,10 +103,10 @@ export default function GithubIntegrationModal({
 
         <form onSubmit={connect} className="space-y-4">
           <div className="grid grid-cols-2 gap-1 rounded-xl bg-kf-warm-gray p-1">
-            <button type="button" onClick={() => setMode('app')} className={`px-3 py-2 text-sm rounded-lg ${mode === 'app' ? 'bg-kf-white text-kf-charcoal shadow-sm' : 'text-kf-slate'}`}>
+            <button type="button" onClick={() => setMode('app')} className={`px-3 py-2 text-sm rounded-lg ${mode === 'app' ? 'bg-kf-carbon text-kf-charcoal shadow-sm' : 'text-kf-slate'}`}>
               Continue with GitHub
             </button>
-            <button type="button" onClick={() => setMode('pat')} className={`px-3 py-2 text-sm rounded-lg ${mode === 'pat' ? 'bg-kf-white text-kf-charcoal shadow-sm' : 'text-kf-slate'}`}>
+            <button type="button" onClick={() => setMode('pat')} className={`px-3 py-2 text-sm rounded-lg ${mode === 'pat' ? 'bg-kf-carbon text-kf-charcoal shadow-sm' : 'text-kf-slate'}`}>
               Personal token
             </button>
           </div>

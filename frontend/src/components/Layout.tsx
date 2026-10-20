@@ -16,6 +16,7 @@ import {
   Users,
   GitPullRequest,
   RefreshCw,
+  TerminalSquare,
 } from 'lucide-react';
 import { useApp } from '../AppContext';
 import { cn } from '../lib/utils';
@@ -70,18 +71,18 @@ export default function Layout({ children, currentView, onViewChange }: LayoutPr
     <div className="flex h-screen bg-kf-soft-gray text-kf-charcoal font-sans overflow-hidden">
       <aside
         className={cn(
-          'border-r border-kf-divider-gray bg-kf-white transition-all duration-300 overflow-hidden flex flex-col shrink-0 z-40 fixed md:relative h-full shadow-[var(--shadow-kf-subtle)]',
+          'border-r border-kf-divider-gray bg-kf-carbon transition-all duration-300 overflow-hidden flex flex-col shrink-0 z-40 fixed md:relative h-full',
           isSidebarOpen ? 'w-72 translate-x-0' : 'w-0 -translate-x-full md:translate-x-0 md:w-0 border-none',
         )}
       >
         <div className="p-6 md:p-8">
           <div className="flex items-center gap-3 mb-10">
-            <div className="w-10 h-10 rounded-[12px] bg-kf-meta-blue flex items-center justify-center text-kf-white shadow-md">
+            <div className="w-10 h-10 rounded-xl bg-kf-meta-blue flex items-center justify-center text-kf-paper">
               <Kanban className="w-5 h-5" strokeWidth={2} />
             </div>
             <div>
-              <span className="block text-lg font-medium tracking-tight text-kf-charcoal">Kanflow</span>
-              <span className="text-xs text-kf-slate font-normal">Task management</span>
+              <span className="block text-[16px] font-medium tracking-[-0.011em] text-kf-paper">Kanflow</span>
+              <span className="text-[12px] text-kf-fog font-normal tracking-[-0.010em]">Task management</span>
             </div>
           </div>
 
@@ -128,6 +129,12 @@ export default function Layout({ children, currentView, onViewChange }: LayoutPr
               active={currentView === 'time'}
               onClick={() => onViewChange('time')}
             />
+            <SidebarItem
+              icon={<TerminalSquare size={20} strokeWidth={1.75} />}
+              label="Coding agent"
+              active={currentView === 'agent'}
+              onClick={() => onViewChange('agent')}
+            />
           </nav>
         </div>
 
@@ -140,7 +147,7 @@ export default function Layout({ children, currentView, onViewChange }: LayoutPr
               <div className="rounded-xl border border-kf-divider-gray bg-kf-soft-gray/50 p-3">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2 min-w-0">
-                    <div className="p-2 rounded-[10px] bg-kf-warm-gray border border-kf-divider-gray text-kf-icon-secondary shrink-0">
+                    <div className="p-2 rounded-md bg-kf-warm-gray border border-kf-divider-gray text-kf-icon-secondary shrink-0">
                       <Github size={14} />
                     </div>
                     <div className="min-w-0">
@@ -238,7 +245,7 @@ export default function Layout({ children, currentView, onViewChange }: LayoutPr
               <input
                 type="search"
                 placeholder="Search tasks across projects…"
-                className="kf-input pl-10 pr-4 py-2 text-sm w-full sm:w-56 md:w-64 lg:w-72 xl:w-80 rounded-full border-kf-divider-gray"
+                className="kf-input pl-10 pr-4 py-2 text-sm w-full sm:w-56 md:w-64 lg:w-72 xl:w-80"
                 value={globalSearchQuery}
                 onChange={(e) => setGlobalSearchQuery(e.target.value)}
                 aria-autocomplete="list"
@@ -263,7 +270,7 @@ export default function Layout({ children, currentView, onViewChange }: LayoutPr
                 title={apiOnline ? 'Create database user' : 'API offline — connect server to create users'}
                 disabled={!apiOnline}
                 onClick={() => apiOnline && setAdminUserModalOpen(true)}
-                className="hidden sm:flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-kf-meta-blue hover:bg-kf-baby-blue/40 rounded-full border border-kf-meta-blue/25 disabled:opacity-40 disabled:cursor-not-allowed"
+                className="hidden sm:flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-kf-mist hover:bg-white/[0.04] rounded-[6px] border border-kf-graphite disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <UserPlus size={16} strokeWidth={1.75} />
                 User
@@ -293,7 +300,7 @@ export default function Layout({ children, currentView, onViewChange }: LayoutPr
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: 10, scale: 0.98 }}
                       transition={{ duration: 0.15 }}
-                      className="absolute right-0 top-12 w-[min(100vw-2rem,22rem)] kf-card-elevated z-30 flex flex-col max-h-[400px] overflow-hidden rounded-[20px]"
+                      className="absolute right-0 top-12 w-[min(100vw-2rem,22rem)] kf-card-elevated z-30 flex flex-col max-h-[400px] overflow-hidden rounded-xl"
                     >
                       <div className="p-4 border-b border-kf-divider-gray flex items-center justify-between">
                         <span className="text-sm font-medium text-kf-charcoal">Notifications</span>
@@ -338,7 +345,12 @@ export default function Layout({ children, currentView, onViewChange }: LayoutPr
           </div>
         </header>
 
-        <div className="flex-1 overflow-auto px-4 py-6 md:px-10 md:py-10 max-w-[1440px] w-full mx-auto custom-scrollbar">
+        <div
+          className={cn(
+            'flex-1 min-h-0 px-4 py-6 md:px-10 md:py-10 max-w-[1440px] w-full mx-auto custom-scrollbar',
+            currentView === 'agent' ? 'overflow-hidden flex flex-col' : 'overflow-auto',
+          )}
+        >
           {children}
         </div>
 
@@ -372,10 +384,10 @@ function SidebarItem({
       type="button"
       onClick={onClick}
       className={cn(
-        'w-full flex items-center gap-3 px-3 py-3 rounded-full transition-all text-sm font-medium min-h-[44px]',
+        'w-full flex items-center gap-3 px-3 py-2.5 rounded-[6px] transition-colors text-[13px] font-medium min-h-[40px] tracking-[-0.011em]',
         active
-          ? 'bg-kf-meta-blue text-kf-white shadow-md hover:bg-kf-meta-blue-hover'
-          : 'text-kf-charcoal hover:bg-kf-warm-gray',
+          ? 'bg-kf-meta-blue text-kf-paper hover:bg-kf-meta-blue-hover'
+          : 'text-kf-mist hover:bg-white/[0.04] hover:text-kf-paper',
       )}
     >
       {icon}
@@ -388,7 +400,7 @@ function ConnectorItem({ icon, label, status }: { icon: React.ReactNode; label: 
   return (
     <div className="flex items-center justify-between gap-2">
       <div className="flex items-center gap-2 min-w-0">
-        <div className="p-2 rounded-[10px] bg-kf-warm-gray border border-kf-divider-gray text-kf-icon-secondary shrink-0">
+        <div className="p-2 rounded-md bg-kf-warm-gray border border-kf-divider-gray text-kf-icon-secondary shrink-0">
           {icon}
         </div>
         <span className="text-xs font-medium text-kf-slate truncate">{label}</span>

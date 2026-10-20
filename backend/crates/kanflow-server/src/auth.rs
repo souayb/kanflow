@@ -119,6 +119,11 @@ pub async fn fetch_and_cache_jwks(auth: &Arc<AuthConfig>) -> anyhow::Result<()> 
 
 // ── Token validation ──────────────────────────────────────────────────────────
 
+#[allow(clippy::result_unit_err)]
+pub async fn validate_bearer(token: &str, auth: &Arc<AuthConfig>) -> Result<Claims, ()> {
+    validate_token(token, auth).await
+}
+
 async fn validate_token(token: &str, auth: &Arc<AuthConfig>) -> Result<Claims, ()> {
     let header = decode_header(token).map_err(|_| ())?;
     let kid = header.kid.as_deref().unwrap_or("").to_string();

@@ -101,7 +101,8 @@ async fn main() -> anyhow::Result<()> {
 
     let state = AppState::new(pg, mongo, auth)
         .with_github(github)
-        .with_github_app(cfg.github_app.clone());
+        .with_github_app(cfg.github_app.clone())
+        .with_terminal_cwd(cfg.terminal_cwd.clone());
     let app = router(state);
 
     let addr = format!("{}:{}", cfg.host, cfg.port);

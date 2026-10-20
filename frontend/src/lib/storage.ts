@@ -16,6 +16,8 @@ export const KANFLOW_KEYS = {
   dashboardChartDays: 'kanflow_dashboard_chart_days',
   workSessions: 'kanflow_work_sessions',
   activityEvents: 'kanflow_activity_events',
+  t3Url: 'kanflow_t3_url',
+  agentSurface: 'kanflow_agent_surface',
 } as const;
 
 const LEGACY = {

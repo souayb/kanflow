@@ -49,7 +49,7 @@ export default function ProjectsSidebarBlock({ onSelectProject }: ProjectsSideba
         <button
           type="button"
           onClick={() => setShowNewProject(true)}
-          className="p-1.5 rounded-[10px] text-kf-meta-blue hover:bg-kf-baby-blue/60 transition-colors"
+          className="p-1.5 rounded-md text-kf-meta-blue hover:bg-kf-baby-blue/60 transition-colors"
           aria-label="Add project"
         >
           <FolderPlus size={18} strokeWidth={1.75} />
@@ -80,7 +80,7 @@ export default function ProjectsSidebarBlock({ onSelectProject }: ProjectsSideba
             {activeProjectId === project.id && (
               <button
                 type="button"
-                className="shrink-0 p-2 text-kf-secondary-text hover:text-kf-error rounded-[10px] hover:bg-kf-warm-gray text-xs font-medium"
+                className="shrink-0 p-2 text-kf-secondary-text hover:text-kf-error rounded-md hover:bg-kf-warm-gray text-xs font-medium"
                 aria-label="Delete project"
                 onClick={() => {
                   if (window.confirm(`Delete project “${project.name}”? Tasks in this project will be removed.`)) {
@@ -186,7 +186,7 @@ export default function ProjectsSidebarBlock({ onSelectProject }: ProjectsSideba
             role="dialog"
             aria-modal="true"
             aria-labelledby="new-project-title"
-            className="w-full max-w-md bg-kf-white rounded-[24px] border border-kf-divider-gray shadow-2xl p-6 space-y-4"
+            className="w-full max-w-md bg-kf-carbon rounded-xl border border-kf-divider-gray shadow-2xl p-6 space-y-4"
           >
             <div className="flex items-center justify-between">
               <h2 id="new-project-title" className="text-lg font-medium text-kf-charcoal">

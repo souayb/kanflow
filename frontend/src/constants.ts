@@ -112,6 +112,7 @@ export const MOCK_TASKS: Task[] = [
     dueDate: T.taskTypoDue,
     createdAt: T.taskTypoCreated,
     updatedAt: T.taskTypoUpdated,
+    position: 1000,
     dependencies: [],
   },
   {
@@ -127,6 +128,7 @@ export const MOCK_TASKS: Task[] = [
     dueDate: T.taskDarkDue,
     createdAt: T.taskDarkCreated,
     updatedAt: T.taskDarkCreated,
+    position: 1000,
     dependencies: [MOCK_TASK_TYPOGRAPHY],
   },
   {
@@ -142,6 +144,7 @@ export const MOCK_TASKS: Task[] = [
     dueDate: T.taskTestDue,
     createdAt: T.taskTestCreated,
     updatedAt: T.taskTestUpdated,
+    position: 1000,
     dependencies: [],
   },
   {
@@ -191,6 +194,7 @@ export const MOCK_TASKS: Task[] = [
     dueDate: T.taskLegacyDue,
     createdAt: T.taskLegacyCreated,
     updatedAt: T.taskLegacyUpdated,
+    position: 1000,
     dependencies: [],
   },
   {
@@ -206,6 +210,7 @@ export const MOCK_TASKS: Task[] = [
     dueDate: T.taskK8sDue,
     createdAt: T.taskK8sCreated,
     updatedAt: T.taskK8sUpdated,
+    position: 1000,
     dependencies: [],
   },
 ];

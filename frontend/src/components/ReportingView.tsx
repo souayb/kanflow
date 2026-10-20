@@ -59,7 +59,7 @@ export default function ReportingView() {
   return (
     <div className="space-y-8 pb-12 custom-scrollbar">
       <div>
-        <h2 className="text-2xl md:text-4xl font-medium tracking-tight text-kf-charcoal">Reporting</h2>
+        <h2 className="text-2xl md:text-4xl font-medium tracking-[-0.022em] text-kf-paper">Reporting</h2>
         <p className="text-kf-slate text-sm mt-2">
           Team throughput and illustrative stage timing ({completedTasks.length} completed in view).
         </p>
@@ -79,15 +79,15 @@ export default function ReportingView() {
           <div className="h-[280px] md:h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={teamPerformance}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#DEE3E9" />
-                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#5D6C7B', fontWeight: 500 }} />
-                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#5D6C7B', fontWeight: 500 }} />
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#23252a" />
+                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#8a8f98', fontWeight: 500 }} />
+                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#8a8f98', fontWeight: 500 }} />
                 <Tooltip
                   cursor={{ fill: 'rgba(0,100,224,0.04)' }}
                   contentStyle={{
-                    backgroundColor: '#FFFFFF',
+                    backgroundColor: '#0f1011',
                     borderRadius: '12px',
-                    border: '1px solid #DEE3E9',
+                    border: '1px solid #23252a',
                     boxShadow: 'var(--shadow-kf-card)',
                   }}
                 />
@@ -95,14 +95,14 @@ export default function ReportingView() {
                   {teamPerformance.map((entry, index) => (
                     <Cell
                       key={index}
-                      fill={entry.efficiency > 70 ? '#31A24C' : entry.efficiency > 40 ? '#0064E0' : '#F7B928'}
+                      fill={entry.efficiency > 70 ? '#27a644' : entry.efficiency > 40 ? '#0064E0' : '#F7B928'}
                     />
                   ))}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
-          <div className="mt-5 p-4 rounded-[16px] bg-kf-soft-gray flex gap-3 items-start border border-kf-divider-gray">
+          <div className="mt-5 p-4 rounded-xl bg-kf-soft-gray flex gap-3 items-start border border-kf-divider-gray">
             <Info size={18} className="text-kf-meta-blue mt-0.5 shrink-0" strokeWidth={1.75} />
             <p className="text-xs text-kf-slate leading-relaxed">
               <strong className="text-kf-charcoal">Efficiency</strong> is completed tasks divided by assigned tasks for
@@ -124,28 +124,28 @@ export default function ReportingView() {
           <div className="h-[280px] md:h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={bottleneckData}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#DEE3E9" />
-                <XAxis dataKey="phase" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#5D6C7B', fontWeight: 500 }} />
-                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#5D6C7B', fontWeight: 500 }} />
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#23252a" />
+                <XAxis dataKey="phase" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#8a8f98', fontWeight: 500 }} />
+                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#8a8f98', fontWeight: 500 }} />
                 <Tooltip
                   contentStyle={{
-                    backgroundColor: '#FFFFFF',
+                    backgroundColor: '#0f1011',
                     borderRadius: '12px',
-                    border: '1px solid #DEE3E9',
+                    border: '1px solid #23252a',
                   }}
                 />
                 <Line
                   type="monotone"
                   dataKey="avgDays"
-                  stroke="#E41E3F"
+                  stroke="#eb5757"
                   strokeWidth={3}
-                  dot={{ r: 5, fill: '#E41E3F', strokeWidth: 2, stroke: '#fff' }}
+                  dot={{ r: 5, fill: '#eb5757', strokeWidth: 2, stroke: '#fff' }}
                   activeDot={{ r: 7, stroke: '#0064E0', strokeWidth: 2 }}
                 />
               </LineChart>
             </ResponsiveContainer>
           </div>
-          <div className="mt-5 p-4 rounded-[16px] border border-kf-error/20 bg-[rgba(255,123,145,0.08)] flex items-center justify-between gap-3">
+          <div className="mt-5 p-4 rounded-xl border border-kf-error/20 bg-[rgba(255,123,145,0.08)] flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
               <div className="w-10 h-10 rounded-full bg-kf-error/10 flex items-center justify-center text-kf-error shrink-0">
                 <Target size={20} strokeWidth={1.75} />
